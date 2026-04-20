@@ -298,8 +298,10 @@ def generate_pdf(input, output):
         for block in bibtext.failed_blocks:
             print(f"\tLine: {block.start_line}")
             print(f"\tError: {block.error}")
-
-    with open("templates/index.html", "r", encoding="utf-8") as html:
+            
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    template_path = os.path.join(base_path, "templates", "index.html")
+    with open(template_path, "r", encoding="utf-8") as html:
         plantilla_html = html.read()
 
     context = {
