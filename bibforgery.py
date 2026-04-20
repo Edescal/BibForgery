@@ -36,7 +36,8 @@ from weasyprint import HTML, CSS
 from collections import defaultdict
 
 
-load_dotenv()
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 
 ELSEVIER_API_KEY = os.getenv("ELSEVIER_API_KEY")
