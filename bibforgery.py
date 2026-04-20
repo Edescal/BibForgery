@@ -465,14 +465,16 @@ def main():
         get_all_papers(args.fetch, args.output if args.output else "fetch-result.json", args.max_entries)
         # --to-bibtex
         if args.to_bibtex:
-            input_file = Path(args.input)
+            input_file = Path(args.output if args.output else "fetch-result.json")
             output_file = input_file.with_name(input_file.stem + "-parsed.bib")
-            json_to_bibtex(args.input, output_file)
+            json_to_bibtex(input_file, output_file)
         return
 
     if args.to_bibtex:
         input_file = Path(args.input)
         output_file = input_file.with_name(input_file.stem + "-parsed.bib")
+        print(input_file)
+        print(output_file)
         json_to_bibtex(args.input, output_file)
         return
 
