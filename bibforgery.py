@@ -53,7 +53,7 @@ def get_grouped_entries(bib_entries: MutableSequence[Entry]):
     generadas por bibtexparser. Si una entrada no
     tiene año la clasifica como "Sin Año".
     """
-    
+
     grouped = defaultdict(list)
     for entry in bib_entries:
         year_field = entry.get("year")
@@ -299,10 +299,13 @@ def generate_pdf(input, output):
         for block in bibtext.failed_blocks:
             print(f"\tLine: {block.start_line}")
             print(f"\tError: {block.error}")
-            
+
     base_path = os.path.dirname(os.path.abspath(__file__))
-    template_path = os.path.join(base_path, "templates", "index.html")
-    with open(template_path, "r", encoding="utf-8") as html:
+    templates_path = os.path.join(base_path, "templates/")
+    html_path = os.path.join(base_path, "templates", "index.html")
+    css_path = os.path.join(base_path, "templates", "styles.css")
+
+    with open(html_path, "r", encoding="utf-8") as html:
         plantilla_html = html.read()
 
     context = {
@@ -310,8 +313,11 @@ def generate_pdf(input, output):
         "date": datetime.now().strftime("%B %d, %Y"),
     }
     render = Template(plantilla_html).render(data=context)
-    styles = CSS(filename="templates/styles.css")
-    HTML(string=render, base_url="templates/").write_pdf(
+    styles = CSS(filename=css_path)
+    HTML(
+        string=render,
+        base_url=templates_path,
+    ).write_pdf(
         output,
         stylesheets=[styles],
     )
@@ -356,7 +362,7 @@ def get_all_papers(author_id, output="output.json", max_entries=500):
         start += count
 
         print(f"Descargados: {len(all_entries)}/{total}")
-        
+
         if start >= total or start >= max_entries:
             break
 
