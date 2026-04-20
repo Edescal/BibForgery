@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title></title>
+</head>
+
+<body>
+    <!-- <header id="cabecera">
+        <div class="header-container">
+            <img src="img/WatocPNGLogo.png" class="header-logo">
+
+            <div style="display: flex; flex-flow: column; text-align: right; font-weight: bold;">
+                <span>Mérida, Mexico</span>
+                <span>WATOC 2028</span>
+            </div>
+        </div>
+        <hr>
+    </header> -->
+
+    <footer id="foot">
+        <div class="footer-container">
+            <hr>
+            <div class="flex-between">
+                <div>
+                    TheoChemMerida
+                </div>
+                <div>
+                   Last update: {{data['date']}}
+                </div>
+            </div>
+        </div>
+        <div style="text-align: center;">
+            <span class="page-number"></span>
+        </div>
+    </footer>
+
+    <h1 class="title">Publications</h1>
+    <main>
+        {% for year, publications in data['grouped_data'] %}
+        <div class="year-section" style="margin-bottom: 30px;">
+            <h2 style="border-bottom: 2px solid #333; padding-bottom: 5px;">
+                {{ year }}
+            </h2>
+
+            <ol reversed style="margin-left: 20px;">
+                {% for pub_html in publications %}
+                <li style="margin-bottom: 12px; break-inside: avoid;">
+                    {{ pub_html | safe }}
+                </li>
+                {% endfor %}
+            </ol>
+        </div>
+        {% endfor %}
+    </main>
+</body>
+
+</html>
