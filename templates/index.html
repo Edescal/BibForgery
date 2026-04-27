@@ -29,7 +29,7 @@
                     TheoChemMerida
                 </div>
                 <div>
-                   Last update: {{data['date']}}
+                    Last update: {{data['date']}}
                 </div>
             </div>
         </div>
@@ -41,20 +41,11 @@
     <h1 class="title">Publications</h1>
     <main>
         {% for year, publications in data['grouped_data'] %}
-        <div class="year-section" style="margin-bottom: 30px;">
-            <h2 style="border-bottom: 2px solid #333; padding-bottom: 5px;">
-                {{ year }}
-            </h2>
-
-            <ol reversed style="margin-left: 20px;">
-                {% for pub_html in publications %}
-                <li style="margin-bottom: 12px; break-inside: avoid;">
-                    {{ pub_html | safe }}
-                </li>
-                {% endfor %}
-            </ol>
-        </div>
+        {% for pub_html in publications %}
+            {{ pub_html | safe }}
         {% endfor %}
+        {% endfor %}
+
     </main>
 </body>
 

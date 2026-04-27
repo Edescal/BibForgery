@@ -32,7 +32,6 @@ from pathlib import Path
 from datetime import datetime
 import bibtexparser, argparse, json, requests, time, os
 from jinja2 import Template
-from weasyprint import HTML, CSS
 from collections import defaultdict
 
 
@@ -54,12 +53,24 @@ def get_grouped_entries(bib_entries: MutableSequence[Entry]):
     tiene año la clasifica como "Sin Año".
     """
 
+    def extract_year(entry):
+        y = entry.get("year")
+        try:
+            return int(y.value) if y else 0
+        except (ValueError, AttributeError):
+            return 0
+
+    sorted_entries = sorted(bib_entries, key=extract_year, reverse=True)
+    total_papers = len(sorted_entries)
+
     grouped = defaultdict(list)
-    for entry in bib_entries:
+    for i, entry in enumerate(sorted_entries):
+        global_index = total_papers - i
+
         year_field = entry.get("year")
         year = year_field.value if year_field else "Sin Año"
 
-        citation_html = process_single_entry_as_html(entry)
+        citation_html = process_single_entry_as_html(entry, global_index)
         grouped[year].append(citation_html)
 
     sorted_years = sorted(grouped.keys(), reverse=True)
@@ -88,7 +99,7 @@ def transform_authors(author_field: Field):
     return result
 
 
-def process_single_entry_as_html(entry: Entry):
+def process_single_entry_as_html(entry: Entry, index: int):
     """
     Args:
         entry (Entry): Entrada generada por bibtexparser
@@ -127,7 +138,12 @@ def process_single_entry_as_html(entry: Entry):
     if d:
         res += f'. DOI: <a href="https://doi.org/{d.value}" target="_blank" rel="noopener noreferrer" style="color: #0563C1; text-decoration: underline;">https://doi.org/{d.value}</a>'
 
-    return res
+    return f"""
+    <div style="display: flex; margin-bottom: 8px;">
+        <div style="min-width: 35px; font-weight: bold; color: #666;">{index}.</div>
+        <div style="flex: 1;">{res}</div>
+    </div>
+    """
 
 
 def process_entries_as_text(bib_entries: MutableSequence[Entry]):
@@ -290,6 +306,7 @@ def generate_pdf(input, output):
         input (string): Archivo de entrada.
         output (string): Archivo de salida.
     """
+    from weasyprint import HTML, CSS
 
     with open(input, "r", encoding="utf-8") as file:
         bibtext = bibtexparser.parse_string(file.read())
