@@ -176,3 +176,4 @@ pyrightconfig.json
 *.pdf
 *.json
 *.bib
+output/*
