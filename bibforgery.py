@@ -241,8 +241,13 @@ def generate_txt(input, output):
         input (string): Archivo de entrada.
         output (string): Archivo de salida.
     """
+    input_path = Path(input).resolve()
+    
+    if not input_path.exists():
+        print(f"Error: No se encuentra el archivo de entrada {input_path}")
+        return
 
-    with open(input, "r", encoding="utf-8") as file:
+    with open(input_path, "r", encoding="utf-8") as file:
         bibtext = bibtexparser.parse_string(file.read())
 
     if bibtext.failed_blocks:
@@ -251,7 +256,9 @@ def generate_txt(input, output):
             print(f"\tLine: {block.start_line}")
             print(f"\tError: {block.error}")
 
-    with open(output, "w", encoding="utf-8") as file:
+    output_path = Path(output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as file:
         file.writelines(process_entries_as_text(bibtext.entries))
 
     print("[Info] — Data created")
@@ -267,8 +274,13 @@ def generate_json(input, output):
         input (string): Archivo de entrada.
         output (string): Archivo de salida.
     """
+    input_path = Path(input).resolve()
+    
+    if not input_path.exists():
+        print(f"Error: No se encuentra el archivo de entrada {input_path}")
+        return
 
-    with open(input, "r", encoding="utf-8") as file:
+    with open(input_path, "r", encoding="utf-8") as file:
         bibtext = bibtexparser.parse_string(file.read())
 
     if bibtext.failed_blocks:
@@ -277,7 +289,10 @@ def generate_json(input, output):
             print(f"\tLine: {block.start_line}")
             print(f"\tError: {block.error}")
 
-    with open(output, "w", encoding="utf-8") as f:
+    output_path = Path(output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write("[")
 
         yielder = process_entries_as_json(bibtext.entries)
