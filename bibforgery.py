@@ -8,12 +8,11 @@ Eduardo Escalante Pacheco
 17-abril-2026
 
 #### Uso:
-    python3 bibforgery.py [--fetch AUTHOR_ID] [--to-bibtex] [-f {text,json}] [-i INPUT] [-o OUTPUT]
+    python3 bibforgery.py [--fetch AUTHOR_ID] [-f {text,json}] [-i INPUT] [-o OUTPUT]
     python3 bibforgery.py [-f {text,json,pdf}] [-i INPUT] [-o OUTPUT]
 
 #### Opciones:
     --fetch AUTHOR_ID   (opcional) Obtiene artículos del autor desde Scopus
-    --to-bibtex         (opcional) Transforma la respuesta a formato BibTex
     --parse             (opcional) Indica que se va a parsear un archivo BibTex
     -f, --format        (opcional) Formato de salida: text o json
     -i, --input         (opcional) Archivo de entrada (default: input.txt)
@@ -21,7 +20,8 @@ Eduardo Escalante Pacheco
 
 #### Ejemplos:
     python3 bibforgery.py --fetch 56000743500
-    python3 bibforgery.py -f json -i data.txt -o out.json
+    python3 bibforgery.py -f txt -i data.bib -o out.txt
+    python3 bibforgery.py -f json -i data.bib -o out.json
     python3 bibforgery.py -f pdf -i input.bib -o output.pdf
 """
 
@@ -33,7 +33,6 @@ from datetime import datetime
 import bibtexparser, argparse, json, requests, time, os
 from jinja2 import Template
 from collections import defaultdict
-
 
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -140,7 +139,7 @@ def process_single_entry_as_html(entry: Entry, index: int):
 
     return f"""
     <div style="display: flex; margin-bottom: 8px;">
-        <div style="min-width: 35px; font-weight: bold; color: #666;">{index}.</div>
+        <div style="min-width: 35px; font-weight: bold;">{index}.</div>
         <div style="flex: 1;">{res}</div>
     </div>
     """
@@ -350,11 +349,8 @@ def get_all_papers(author_id, output="output.json", max_entries=500):
 
     iter = 1
     while True:
-        print(f"Query: {iter}")
-        iter += 1
-
         params = {
-            "query": f"AU-ID({author_id})",
+            "query": f"AU-ID({author_id}) AND (DOCTYPE(ar) OR DOCTYPE(re) OR DOCTYPE(ed))",
             "start": start,
             "count": count,
             "view": "COMPLETE",
@@ -376,14 +372,20 @@ def get_all_papers(author_id, output="output.json", max_entries=500):
         all_entries.extend(entries)
 
         total = int(data["search-results"]["opensearch:totalResults"])
+
+        next_limit = start + count
+        if (next_limit) > max_entries:
+            count = max_entries - start
         start += count
 
-        print(f"Descargados: {len(all_entries)}/{total}")
+        print(f"Query {iter} — Downloaded: {len(all_entries)}/{total}")
+
+        time.sleep(0.4)
 
         if start >= total or start >= max_entries:
             break
 
-        time.sleep(1)
+        iter += 1
 
     with open(output, "w", encoding="utf-8") as f:
         json.dump({"search-results": {"entry": all_entries}}, f, indent=2, ensure_ascii=False)
@@ -463,7 +465,6 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("--fetch", metavar="AUTHOR ID", default="", help="Fetch Scopus API with AUTHOR_ID")
-    parser.add_argument("--to-bibtex", action="store_true", help="Parse JSON to Bibtex")
     parser.add_argument(
         "--max-entries",
         metavar="",
@@ -488,31 +489,32 @@ def main():
 
     # Si se usan los args --fetch <AUTHOR_ID>
     if args.fetch:
-        get_all_papers(args.fetch, args.output if args.output else "fetch-result.json", args.max_entries)
-        # --to-bibtex
-        if args.to_bibtex:
-            input_file = Path(args.output if args.output else "fetch-result.json")
-            output_file = input_file.with_name(input_file.stem + "-parsed.bib")
-            json_to_bibtex(input_file, output_file)
-        return
+        output_path_base = Path(f"output/{args.output}" if args.output else "output/result.txt")
 
-    if args.to_bibtex:
-        input_file = Path(args.input)
-        output_file = input_file.with_name(input_file.stem + "-parsed.bib")
-        print(input_file)
-        print(output_file)
-        json_to_bibtex(args.input, output_file)
+        output_path = output_path_base.with_name(output_path_base.stem + "_raw.json")
+        get_all_papers(args.fetch, output_path, args.max_entries)
+
+        bib_output_file = output_path_base.with_name(output_path_base.stem + ".bib")
+        json_to_bibtex(output_path, bib_output_file)
         return
 
     if not args.parse or not args.format:
         parser.error("Debes especificar el tipo de uso: --fetch ó --parse")
 
     if args.format == "json":
-        generate_json(args.input, args.output if args.output else "output.json")
+        output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
+        o_f_ext = output_path.with_name(output_path.stem + ".json")
+        generate_json(args.input, o_f_ext)
+
     elif args.format == "text":
-        generate_txt(args.input, args.output if args.output else "output.txt")
+        output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
+        o_f_ext = output_path.with_name(output_path.stem + ".txt")
+        generate_txt(args.input, o_f_ext)
+
     elif args.format == "pdf":
-        generate_pdf(args.input, args.output if args.output else "output.pdf")
+        output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
+        o_f_ext = output_path.with_name(output_path.stem + ".pdf")
+        generate_pdf(args.input, o_f_ext)
 
 
 if __name__ == "__main__":
