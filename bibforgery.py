@@ -459,6 +459,12 @@ def json_to_bibtex(input_file="referencias.json", output_file="referencias.bib")
     print(f"Listo: {output_file}")
 
 
+def check_output_path():
+    root_dir = Path(__file__).parent.absolute()
+    output_path = root_dir / "output"
+    output_path.mkdir(parents=True, exist_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=main.__doc__,
@@ -486,6 +492,8 @@ def main():
     )
 
     args = parser.parse_args()
+
+    check_output_path()
 
     # Si se usan los args --fetch <AUTHOR_ID>
     if args.fetch:
