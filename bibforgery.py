@@ -306,9 +306,18 @@ def generate_pdf(input, output):
         output (string): Archivo de salida.
     """
     from weasyprint import HTML, CSS
+    
+    input_path = Path(input).resolve()
+    
+    if not input_path.exists():
+        print(f"Error: No se encuentra el archivo de entrada {input_path}")
+        return
 
-    with open(input, "r", encoding="utf-8") as file:
+    with open(input_path, "r", encoding="utf-8") as file:
         bibtext = bibtexparser.parse_string(file.read())
+        
+    output_path = Path(output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if bibtext.failed_blocks:
         print(f"[Warning] — Found {len(bibtext.failed_blocks)} Failed Blocks")
@@ -334,7 +343,7 @@ def generate_pdf(input, output):
         string=render,
         base_url=templates_path,
     ).write_pdf(
-        output,
+        output_path,
         stylesheets=[styles],
     )
     print("[Info] — PDF created")
@@ -387,14 +396,23 @@ def get_all_papers(author_id, output="output.json", max_entries=500):
 
         iter += 1
 
-    with open(output, "w", encoding="utf-8") as f:
+    output_path = Path(output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump({"search-results": {"entry": all_entries}}, f, indent=2, ensure_ascii=False)
 
     print(f"\nListo: {output}")
 
 
 def json_to_bibtex(input_file="referencias.json", output_file="referencias.bib"):
-    with open(input_file, "r", encoding="utf-8") as f:
+    input_path = Path(input_file).resolve()
+    
+    if not input_path.exists():
+        print(f"Error: No se encuentra el archivo de entrada {input_path}")
+        return
+
+    with open(input_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     entries = data.get("search-results", {}).get("entry", [])
@@ -453,16 +471,13 @@ def json_to_bibtex(input_file="referencias.json", output_file="referencias.bib")
 
         full_bib += bib
 
-    with open(output_file, "w", encoding="utf-8") as f:
+    output_path = Path(output_file).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(full_bib)
 
     print(f"Listo: {output_file}")
-
-
-def check_output_path():
-    root_dir = Path(__file__).parent.absolute()
-    output_path = root_dir / "output"
-    output_path.mkdir(parents=True, exist_ok=True)
 
 
 def main():
@@ -492,8 +507,6 @@ def main():
     )
 
     args = parser.parse_args()
-
-    check_output_path()
 
     # Si se usan los args --fetch <AUTHOR_ID>
     if args.fetch:
