@@ -2,8 +2,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from .tools import (
     fetch_papers,
-    dump_json_to_file,
-    json_to_bibtex,
+    data_to_bibtex,
     get_data_from_file,
 )
 from .generators import (
@@ -11,7 +10,23 @@ from .generators import (
     generate_pdf,
     generate_txt,
 )
-import argparse, os
+import argparse, os, json
+
+
+def dump_json_to_file(data, output="output.json") -> None:
+    output_path = Path(output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"\nListo: {output}")
+
+
+def dump_data_to_bib_file(data: str, output_file="output.bib") -> None:
+    output_path = Path(output_file).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(data)
+    print(f"Listo: {output_file}")
 
 
 def main():
@@ -53,8 +68,9 @@ def main():
         output_path = output_path_base.with_name(output_path_base.stem + "_raw.json")
         dump_json_to_file(data, output_path)
 
+        bib_data = data_to_bibtex(data)
         bib_output_file = output_path_base.with_name(output_path_base.stem + ".bib")
-        json_to_bibtex(data, bib_output_file)
+        dump_data_to_bib_file(bib_data, bib_output_file)
         return
 
     if not args.parse or not args.format:

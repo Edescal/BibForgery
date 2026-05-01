@@ -26,7 +26,7 @@ Eduardo Escalante Pacheco
 """
 
 from pathlib import Path
-import json, requests, time
+import requests, time
 
 
 def get_data_from_file(input) -> str:
@@ -88,17 +88,7 @@ def fetch_papers(author_id, api_key="", inst_token="", max_entries=500):
     }
 
 
-def dump_json_to_file(data, output="output.json") -> None:
-    output_path = Path(output).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-    print(f"\nListo: {output}")
-
-
-def json_to_bibtex(data, output_file="referencias.bib") -> None:
+def data_to_bibtex(data) -> str:
     entries = data.get("search-results", {}).get("entry", [])
 
     full_bib = ""
@@ -154,11 +144,5 @@ def json_to_bibtex(data, output_file="referencias.bib") -> None:
         bib += "}\n\n"
 
         full_bib += bib
+    return full_bib
 
-    output_path = Path(output_file).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(full_bib)
-
-    print(f"Listo: {output_file}")
