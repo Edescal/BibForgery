@@ -1,4 +1,4 @@
-!["BibForgery — BibTeX → { txt | json | pdf }"](./assets/bibforgery.png)
+!["BibForgery — BibTeX → { txt | json | pdf }"](https://raw.githubusercontent.com/Edescal/BibForgery/main/assets/bibforgery.png)
 
 # BibForgery v1.0
 ## Script para obtener artículos de Scopus y convertirlos a distintos formatos.
