@@ -94,8 +94,8 @@ header#cabecera div span {
 
 
 body {
-    font-family: "Times New Roman", Times, serif;
-    font-size: 12pt;
+    font-family: Georgia, serif;
+    font-size: 10pt;
     line-height: 1.5;
     color: #1a1a1a;
     margin: 0;
@@ -104,7 +104,7 @@ body {
 
 
 .title {
-    font-size: 16pt;
+    font-size: 12pt;
     font-weight: bold;
     text-align: center;
     margin-bottom: 0.5cm;
@@ -112,7 +112,7 @@ body {
 }
 
 .subtitle {
-    font-size: 12pt;
+    font-size: 11pt;
     font-weight: bold;
     text-transform: uppercase;
     line-height: 1.2;
@@ -128,7 +128,7 @@ li {
 }
 
 .text {
-    font-size: 11pt;
+    font-size: 10pt;
     text-align: justify;
     hyphens: auto;
     line-height: 1.5;

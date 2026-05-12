@@ -177,3 +177,7 @@ pyrightconfig.json
 *.json
 *.bib
 output
+
+ignore/
+test.py
+task.py

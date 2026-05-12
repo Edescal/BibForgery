@@ -1,32 +1,28 @@
-#!/usr/bin/python3 -u
-"""
-BibForgery v1.0
-Script para obtener artículos de Scopus y convertirlos a distintos formatos.
-
-Creado por:
-Eduardo Escalante Pacheco
-17-abril-2026
-
-#### Uso:
-    python3 bibforgery.py [--fetch AUTHOR_ID] [-f {text,json}] [-i INPUT] [-o OUTPUT]
-    python3 bibforgery.py [-f {text,json,pdf}] [-i INPUT] [-o OUTPUT]
-
-#### Opciones:
-    --fetch AUTHOR_ID   (opcional) Obtiene artículos del autor desde Scopus
-    --parse             (opcional) Indica que se va a parsear un archivo BibTex
-    -f, --format        (opcional) Formato de salida: text o json
-    -i, --input         (opcional) Archivo de entrada (default: input.txt)
-    -o, --output        (opcional) Archivo de salida (default: output.txt)
-
-#### Ejemplos:
-    python3 bibforgery.py --fetch 56000743500
-    python3 bibforgery.py -f txt -i data.bib -o out.txt
-    python3 bibforgery.py -f json -i data.bib -o out.json
-    python3 bibforgery.py -f pdf -i input.bib -o output.pdf
-"""
-
+from .libjabbrev2 import jabbreviation2
 from pathlib import Path
-import requests, time
+from lxml import etree
+import requests, time, re
+
+
+def get_citedby_count_from_xml(root):
+    node = root.find(".//{*}citedby-count")
+    return node.text if node is not None else "0"
+
+
+def get_title_from_xml(root):
+    title = root.find(".//{*}titletext")
+    if title is None:
+        return ""
+    html = etree.tostring(title, encoding="unicode", method="html")
+    start = html.find(">") + 1
+    end = html.rfind("</")
+    title = html[start:end]
+    title = title.replace("<inf>", "<sub>")
+    title = title.replace("</inf>", "</sub>")
+    title = re.sub(r"\s+(<sub>)", r"\1", title)
+    title = re.sub(r"\s+(<sup>)", r"\1", title)
+    title = re.sub(r"\s+", " ", title).strip()
+    return title
 
 
 def get_data_from_file(input) -> str:
@@ -39,14 +35,113 @@ def get_data_from_file(input) -> str:
     return data
 
 
-def fetch_papers(author_id, api_key="", inst_token="", max_entries=500):
-    headers = {"X-ELS-APIKey": api_key, "X-ELS-Insttoken": inst_token, "Accept": "application/json"}
+def data_to_bibtex(data, api_key="", inst_token="") -> str:
+    entries = data.get("search-results", {}).get("entry", [])
+    full_bib = ""
 
+    for entry in entries:
+        alt_title = None
+        citedby_count = None
+        scopus_id = entry.get("dc:identifier", None)
+        if scopus_id:
+            ID = scopus_id.split(":")[-1]
+            root = fetch_content_article(ID, api_key, inst_token)
+            if root:
+                alt_title = get_title_from_xml(root)
+                citedby_count = get_citedby_count_from_xml(root)
+
+        title = entry.get("dc:title", "")
+        authors = entry.get("author", [])
+        author_list = [f"{a.get('surname','')}, {a.get('given-name','')}".strip(", ") for a in authors]
+        authors_str = " and ".join(author_list) if author_list else entry.get("dc:creator", "Unknown")
+
+        journal = entry.get("prism:publicationName", "")
+        date = entry.get("prism:coverDate", "0000-00-00")
+        year = date[:4]
+        month = date[5:7] if len(date) >= 7 else ""
+        day = date[8:10] if len(date) >= 10 else ""
+        doi = entry.get("prism:doi", "")
+        volume = entry.get("prism:volume", "")
+        issue = entry.get("prism:issueIdentifier", "")
+        pages = entry.get("prism:pageRange", "")
+        eid = entry.get("eid", "")
+
+        # Key
+        if eid:
+            cite_key = eid
+        elif doi:
+            cite_key = doi.replace("/", "_").replace(".", "_")
+        else:
+            main_auth = entry.get("dc:creator", "paper").split(",")[0]
+            cite_key = f"{main_auth}_{year}"
+
+        # BibTeX
+        bib = f"@ARTICLE{{{cite_key},\n"
+        bib += f"  author = {{{authors_str}}},\n"
+        bib += f"  title = {{{alt_title if alt_title else title}}},\n"
+        bib += f"  journal = {{{journal}}},\n"
+        bib += f"  journal_abbrev = {{{jabbreviation2(journal)}}},\n"
+        bib += f"  year = {{{year}}},\n"
+        if month:
+            bib += f"  month = {{{month}}},\n"
+        if day:
+            bib += f"  day = {{{day}}},\n"
+        if volume:
+            bib += f"  volume = {{{volume}}},\n"
+        if issue:
+            bib += f"  number = {{{issue}}},\n"
+        if pages:
+            bib += f"  pages = {{{pages}}},\n"
+        if doi:
+            bib += f"  doi = {{{doi}}},\n"
+        if citedby_count:
+            bib += f"  citedby_count = {{{citedby_count}}},\n"
+        if eid:
+            bib += f"  url = {{https://www.scopus.com/inward/record.uri?eid={eid}}},\n"
+        bib += f"  type = {{{entry.get('subtypeDescription', 'Article')}}}\n"
+        bib += "}\n\n"
+
+        full_bib += bib
+    return full_bib
+
+
+def fetch_content_article(scopus_id, api_key="", inst_token=""):
+    headers = {
+        "X-ELS-APIKey": api_key,
+        "Accept": "application/xml",
+    }
+
+    if inst_token:
+        headers["X-ELS-Insttoken"] = inst_token
+
+    print(f"Query for {scopus_id}")
+    res = requests.get(f"https://api.elsevier.com/content/abstract/scopus_id/{scopus_id}", headers=headers)
+    if res.status_code != 200:
+        print("Error:", res.status_code, res.text)
+        return None
+
+    root = etree.fromstring(res.content)
+
+    print(f" — Fetched")
+    print(f"  X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
+    print(f"  X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
+    time.sleep(0.2)
+    return root
+
+
+def fetch_papers_by_author(author_id: str, api_key="", inst_token="", max_results=500):
+    headers = {
+        "X-ELS-APIKey": api_key,
+        "Accept": "application/json",
+    }
+    if inst_token:
+        headers["X-ELS-Insttoken"] = inst_token
+
+    iter = 1
     start = 0
     count = 25
     all_entries = []
 
-    iter = 1
     while True:
         print(f"Query {iter}", end="")
         iter += 1
@@ -63,6 +158,7 @@ def fetch_papers(author_id, api_key="", inst_token="", max_entries=500):
         if res.status_code != 200:
             print("Error:", res.status_code, res.text)
             break
+
         data = res.json()
         entries = data.get("search-results", {}).get("entry", [])
         if not entries:
@@ -71,14 +167,16 @@ def fetch_papers(author_id, api_key="", inst_token="", max_entries=500):
         all_entries.extend(entries)
         total = int(data["search-results"]["opensearch:totalResults"])
         print(f" — Downloaded: {len(all_entries)}/{total}")
-        time.sleep(0.4)
+        print(f"  X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
+        print(f"  X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
+        time.sleep(0.2)
 
         next_limit = start + count
-        if (next_limit) > max_entries:
-            count = max_entries - start
+        if (next_limit) > max_results:
+            count = max_results - start
         start += count
 
-        if start >= total or start >= max_entries:
+        if start >= total or start >= max_results:
             break
 
     return {
@@ -88,61 +186,62 @@ def fetch_papers(author_id, api_key="", inst_token="", max_entries=500):
     }
 
 
-def data_to_bibtex(data) -> str:
-    entries = data.get("search-results", {}).get("entry", [])
+def fetch_citing_articles(eid: str, api_key="", inst_token="", max_results=500):
+    headers = {"X-ELS-APIKey": api_key, "Accept": "application/json"}
+    if inst_token:
+        headers["X-ELS-Insttoken"] = inst_token
 
-    full_bib = ""
+    all_entries = []
+    start = 0
+    count = 25
 
-    for entry in entries:
-        authors = entry.get("author", [])
-        author_list = [f"{a.get('surname','')}, {a.get('given-name','')}".strip(", ") for a in authors]
-        authors_str = " and ".join(author_list) if author_list else entry.get("dc:creator", "Unknown")
+    while True:
+        params = {
+            "query": f"ref({eid})",
+            "start": start,
+            "count": count,
+            "view": "COMPLETE",
+            "sort": "-coverDate",
+        }
 
-        # Datos básicos
-        title = entry.get("dc:title", "Untitled")
-        journal = entry.get("prism:publicationName", "")
-        date = entry.get("prism:coverDate", "0000-00-00")
-        year = date[:4]
-        month = date[5:7] if len(date) >= 7 else ""
-        day = date[8:10] if len(date) >= 10 else ""
-        doi = entry.get("prism:doi", "")
-        volume = entry.get("prism:volume", "")
-        issue = entry.get("prism:issueIdentifier", "")
-        pages = entry.get("prism:pageRange", "")
-        eid = entry.get("eid", "")
+        try:
+            res = requests.get(
+                "https://api.elsevier.com/content/search/scopus",
+                headers=headers,
+                params=params,
+                timeout=30,
+            )
+        except requests.RequestException as e:
+            print(f"  [Warning] Error de red para EID {eid}: {e}")
+            break
 
-        # Key
-        if doi:
-            cite_key = doi.replace("/", "_").replace(".", "_")
-        elif eid:
-            cite_key = eid.replace("-", "_")
-        else:
-            main_auth = entry.get("dc:creator", "paper").split(",")[0]
-            cite_key = f"{main_auth}_{year}"
+        if res.status_code != 200:
+            print(f"  [Warning] API devolvió {res.status_code} para EID {eid}")
+            break
 
-        # BibTeX
-        bib = f"@ARTICLE{{{cite_key},\n"
-        bib += f"  author = {{{authors_str}}},\n"
-        bib += f"  title = {{{title}}},\n"
-        bib += f"  journal = {{{journal}}},\n"
-        bib += f"  year = {{{year}}},\n"
-        if month:
-            bib += f"  month = {{{month}}},\n"
-        if day:
-            bib += f"  day = {{{day}}},\n"
-        if volume:
-            bib += f"  volume = {{{volume}}},\n"
-        if issue:
-            bib += f"  number = {{{issue}}},\n"
-        if pages:
-            bib += f"  pages = {{{pages}}},\n"
-        if doi:
-            bib += f"  doi = {{{doi}}},\n"
-        if eid:
-            bib += f"  url = {{https://www.scopus.com/inward/record.uri?eid={eid}}},\n"
-        bib += f"  type = {{{entry.get('subtypeDescription', 'Article')}}}\n"
-        bib += "}\n\n"
+        data = res.json()
+        results = data.get("search-results", {})
+        entries = results.get("entry", [])
+        total = int(data["search-results"]["opensearch:totalResults"])
+        print(f" — Downloaded: {len(all_entries)}/{total}")
+        print(f"X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
+        print(f"X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
 
-        full_bib += bib
-    return full_bib
+        # La API devuelve [{"error": "..."}] cuando no hay resultados
+        if not entries or "error" in entries[0]:
+            break
 
+        all_entries.extend(entries)
+        total = int(results.get("opensearch:totalResults", 0))
+        start += count
+
+        time.sleep(0.2)
+
+        if start >= total or start >= max_results:
+            break
+
+    return {
+        "search-results": {
+            "entry": all_entries,
+        },
+    }
