@@ -3,6 +3,17 @@ from pathlib import Path
 from lxml import etree
 import requests, time, re
 
+def clean_crossref_title(title: str) -> str:
+    if not title:
+        return ''
+    title = re.sub(r"\s*\n\s*", " ", title)
+    title = re.sub(r">\s+<", "><", title)
+    title = re.sub(r"\s*(</?(?:sub|sup|i|b)>)\s*", r"\1", title)
+    title = re.sub(r"\s{2,}", " ", title)
+    title = re.sub(r"(</(?:sub|sup|i|b)>)\s*([A-Za-z])", r"\1 \2", title)
+    title = re.sub(r"(\d)([A-Za-z])", r"\1 \2", title)
+
+    return title.strip()
 
 def get_citedby_count_from_xml(root):
     node = root.find(".//{*}citedby-count")
@@ -35,21 +46,12 @@ def get_data_from_file(input) -> str:
     return data
 
 
-def data_to_bibtex(data, api_key="", inst_token="") -> str:
+def data_to_bibtex(data) -> str:
     entries = data.get("search-results", {}).get("entry", [])
     full_bib = ""
 
     for entry in entries:
         alt_title = None
-        citedby_count = None
-        scopus_id = entry.get("dc:identifier", None)
-        if scopus_id:
-            ID = scopus_id.split(":")[-1]
-            root = fetch_content_article(ID, api_key, inst_token)
-            if root:
-                alt_title = get_title_from_xml(root)
-                citedby_count = get_citedby_count_from_xml(root)
-
         title = entry.get("dc:title", "")
         authors = entry.get("author", [])
         author_list = [f"{a.get('surname','')}, {a.get('given-name','')}".strip(", ") for a in authors]
@@ -60,11 +62,18 @@ def data_to_bibtex(data, api_key="", inst_token="") -> str:
         year = date[:4]
         month = date[5:7] if len(date) >= 7 else ""
         day = date[8:10] if len(date) >= 10 else ""
-        doi = entry.get("prism:doi", "")
         volume = entry.get("prism:volume", "")
         issue = entry.get("prism:issueIdentifier", "")
         pages = entry.get("prism:pageRange", "")
         eid = entry.get("eid", "")
+        citedby_count = int(entry.get('citedby-count', "0"))
+        doi = entry.get("prism:doi", "")
+        if doi:
+            crossref_data = fetch_crossref_from_doi(doi, 'contact@watoc2028.org')
+            if crossref_data:
+                alt_title = crossref_data.get('message', {}).get('title', [''])[0]
+                alt_title = clean_crossref_title(alt_title)
+                time.sleep(0.3)
 
         # Key
         if eid:
@@ -78,7 +87,7 @@ def data_to_bibtex(data, api_key="", inst_token="") -> str:
         # BibTeX
         bib = f"@ARTICLE{{{cite_key},\n"
         bib += f"  author = {{{authors_str}}},\n"
-        bib += f"  title = {{{alt_title if alt_title else title}}},\n"
+        bib += f"  title = {{{alt_title if len(alt_title) > (len(title)) else title}}},\n"
         bib += f"  journal = {{{journal}}},\n"
         bib += f"  journal_abbrev = {{{jabbreviation2(journal)}}},\n"
         bib += f"  year = {{{year}}},\n"
@@ -105,6 +114,22 @@ def data_to_bibtex(data, api_key="", inst_token="") -> str:
     return full_bib
 
 
+def fetch_crossref_from_doi(doi: str, mailto: str):
+    """
+    Get metadata from Crossref using DOI
+    """
+    url = f"https://api.crossref.org/works/{doi}"
+
+    headers = {"User-Agent": f"BibTool/1.0 (mailto:{mailto})"}
+    params = {"mailto": mailto}
+    response = requests.get(url, headers=headers, params=params, timeout=10)
+    if response.status_code != 200:
+        print(f"Error {response.status_code}: {response.text}")
+        return None
+
+    return response.json()
+
+
 def fetch_content_article(scopus_id, api_key="", inst_token=""):
     headers = {
         "X-ELS-APIKey": api_key,
@@ -123,10 +148,14 @@ def fetch_content_article(scopus_id, api_key="", inst_token=""):
     root = etree.fromstring(res.content)
 
     print(f" — Fetched")
-    print(f"  X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
-    print(f"  X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
+    print(f"   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
+    print(f"   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
     time.sleep(0.2)
     return root
+
+
+
+
 
 
 def fetch_papers_by_author(author_id: str, api_key="", inst_token="", max_results=500):
@@ -167,8 +196,8 @@ def fetch_papers_by_author(author_id: str, api_key="", inst_token="", max_result
         all_entries.extend(entries)
         total = int(data["search-results"]["opensearch:totalResults"])
         print(f" — Downloaded: {len(all_entries)}/{total}")
-        print(f"  X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
-        print(f"  X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
+        print(f"   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
+        print(f"   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
         time.sleep(0.2)
 
         next_limit = start + count
@@ -196,6 +225,7 @@ def fetch_citing_articles(eid: str, api_key="", inst_token="", max_results=500):
     count = 25
 
     while True:
+        print(f"  Fetching {eid}", end="")
         params = {
             "query": f"ref({eid})",
             "start": start,
@@ -223,9 +253,6 @@ def fetch_citing_articles(eid: str, api_key="", inst_token="", max_results=500):
         results = data.get("search-results", {})
         entries = results.get("entry", [])
         total = int(data["search-results"]["opensearch:totalResults"])
-        print(f" — Downloaded: {len(all_entries)}/{total}")
-        print(f"X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
-        print(f"X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
 
         # La API devuelve [{"error": "..."}] cuando no hay resultados
         if not entries or "error" in entries[0]:
@@ -235,6 +262,9 @@ def fetch_citing_articles(eid: str, api_key="", inst_token="", max_results=500):
         total = int(results.get("opensearch:totalResults", 0))
         start += count
 
+        print(f" — Downloaded: {len(all_entries)}/{total}")
+        print(f"   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
+        print(f"   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
         time.sleep(0.2)
 
         if start >= total or start >= max_results:

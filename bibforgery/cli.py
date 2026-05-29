@@ -47,22 +47,25 @@ def dump_json_to_file(data, output="output.json") -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"\nListo: {output}")
-
 
 def dump_data_to_bib_file(data: str, output_file="output.bib") -> None:
     output_path = Path(output_file).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(data)
-    print(f"Listo: {output_file}")
+
+
+def resolve_name(prefix, name, extension):
+    basename = Path(f"{prefix}/{name}")
+    output = basename.with_name(basename.stem + f'.{extension}')
+    return output
 
 
 def main():
     load_dotenv()
 
-    elsevier_api_key = os.getenv("ELSEVIER_API_KEY")
-    elsevier_inst_token = os.getenv("ELSEVIER_INSTTOKEN")
+    ELSEVIER_API_KEY = os.getenv("ELSEVIER_API_KEY")
+    ELSEVIER_INST_TOKEN = os.getenv("ELSEVIER_INSTTOKEN")
 
     parser = argparse.ArgumentParser(
         description=main.__doc__,
@@ -83,8 +86,9 @@ def main():
         help="Límite máximo de artículos recuperados (útil para testing)",
     )
     parser.add_argument("-i", "--input", metavar="BibTex", default="input.txt", help="Nombre de archivo de entrada")
-    parser.add_argument("-o", "--output", metavar="JSON, TXT", default="", help="Nombre de aArchivo de salida")
+    parser.add_argument("-o", "--output", metavar="JSON, TXT", default="", help="Nombre de archivo de salida")
     parser.add_argument("--parse", action="store_true", help="Parse JSON to Bibtex")
+    parser.add_argument("--full", action="store_true", help="Parse JSON to Bibtex")
     parser.add_argument(
         "-f",
         "--format",
@@ -97,27 +101,60 @@ def main():
     args = parser.parse_args()
 
     if args.fetch_cites:
-        data = fetch_citing_articles(args.fetch_cites, elsevier_api_key, elsevier_inst_token, args.max_entries)
+        data = fetch_citing_articles(args.fetch_cites, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
+
         output_path_base = Path(f"output/{args.output}" if args.output else "output/result.txt")
         output_path = output_path_base.with_name(output_path_base.stem + "_raw.json")
         dump_json_to_file(data, output_path)
 
-        bib_data = data_to_bibtex(data, elsevier_api_key, elsevier_inst_token)
+        bib_data = data_to_bibtex(data)
         bib_output_file = output_path_base.with_name(output_path_base.stem + ".bib")
         dump_data_to_bib_file(bib_data, bib_output_file)
-        print("ARTICULOS CITADOS")
         return
 
     if args.fetch:
-        data = fetch_papers_by_author(args.fetch, elsevier_api_key, elsevier_inst_token, args.max_entries)
-
-        output_path_base = Path(f"output/{args.output}" if args.output else "output/result.txt")
-        output_path = output_path_base.with_name(output_path_base.stem + "_raw.json")
+        data = fetch_papers_by_author(args.fetch, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
+        output_path = resolve_name('output', f'{args.output}_response', 'json')        
         dump_json_to_file(data, output_path)
+        print(f"Listo: {output_path}")
 
-        bib_data = data_to_bibtex(data, elsevier_api_key, elsevier_inst_token)
-        bib_output_file = output_path_base.with_name(output_path_base.stem + ".bib")
+
+        bib_data = data_to_bibtex(data)        
+        bib_output_file = resolve_name('output', f'{args.output}', 'bib')        
         dump_data_to_bib_file(bib_data, bib_output_file)
+        print(f"Listo: {bib_output_file}\n")
+
+        if args.full:
+            print('Artículos citados:')
+            
+            def get_year(e):
+                d = e.get("prism:coverDate", "0000")
+                try:  return int(d[:4])
+                except (ValueError, TypeError):
+                    return 0
+
+            entries = data.get("search-results", {}).get("entry", [])
+            sorted_entries = sorted(entries, key=get_year, reverse=True)
+            total = len(sorted_entries)
+
+            for i, entry in enumerate(sorted_entries):
+                global_index = total - i
+                cited_count = int(entry.get("citedby-count", 0))
+                eid = entry.get("eid", "")
+                short_title = entry.get("dc:title", "")[:55]
+                print(f"  [{global_index:>3}/{total}] {short_title}... (citado: {cited_count}) -> EID: {eid}")
+
+                if cited_count > 0 and eid:
+                    cites_data = fetch_citing_articles(eid, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN)
+                    citedby_json_filename = resolve_name('output', f'{args.output}_citedby', 'json')
+                    dump_json_to_file(cites_data, citedby_json_filename)
+                    print(f"   Listo: {citedby_json_filename}")
+
+                    citedby_bibtex_str = data_to_bibtex(data)
+                    citedby_bib_filename = resolve_name('output', f'{args.output}_citedby', 'bib')                    
+                    dump_data_to_bib_file(citedby_bibtex_str, citedby_bib_filename)
+                    print(f"   Listo: {citedby_bib_filename}\n")
+                     
         return
 
     if not args.parse or not args.format:
@@ -148,6 +185,7 @@ def main():
             file.write(text_as_bytes.getvalue())
 
         print("[Info] — Data created")
+
     elif args.format == "docx" or args.format == "word":
         output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
         o_f_ext = output_path.with_name(output_path.stem + ".docx")
@@ -159,7 +197,6 @@ def main():
         # with open(output_path, "wb") as f:
         #     f.write(docx_as_bytes)
 
-        pass
     elif args.format == "pdf":
         output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
         o_f_ext = output_path.with_name(output_path.stem + ".pdf")

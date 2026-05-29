@@ -5,6 +5,7 @@ from .parser import (
     get_grouped_entries,
 )
 from .tools import fetch_citing_articles
+from .libjabbrev2 import jabbreviation2
 from enum import Enum
 
 from jinja2 import Template
@@ -223,6 +224,7 @@ def add_citation_formatted(doc, entry, global_index, abbreviated=True, extra_ind
         authors = authors_raw
 
     number_text = f"[{global_index}]"
+    journal = jabbreviation2(journal) if abbreviated else journal
 
     # construir runs: (text, bold, italic, pt)
     runs = []
@@ -295,7 +297,7 @@ def generate_docx(json_input, output) -> None:
         cited_count = int(entry.get("citedby-count", 0))
         eid = entry.get("eid", "")
         short_title = entry.get("dc:title", "")[:55]
-        print(f"[{global_index:>3}/{total}] {short_title}... (citado: {cited_count}) -> EID: {eid}")
+        print(f" [{global_index:>3}/{total}] {short_title}... (citado: {cited_count}) -> EID: {eid}")
 
         add_citation_formatted(doc, entry, global_index, abbreviated=True)
 
