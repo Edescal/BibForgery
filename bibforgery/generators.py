@@ -4,7 +4,7 @@ from .parser import (
     process_entries_as_text,
     get_grouped_entries,
 )
-from .tools import fetch_citing_articles
+from .tools import get_data_from_file
 from .libjabbrev2 import jabbreviation2
 from enum import Enum
 
@@ -159,7 +159,7 @@ def set_paragraph_spacing(para, before=0, after=4, line=None):
         pf.line_spacing = line
 
 
-def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_width_cm=0.9):
+def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_width_cm=0.8):
     """
     Párrafo con numeración manual y sangría francesa (hanging indent).
     number_text : str  — p.ej. "[47]"
@@ -208,7 +208,7 @@ def add_citation_formatted(doc, entry, global_index, abbreviated=True, extra_ind
     """
     indent_cm = 0.8 if extra_indent else 0.0
 
-    authors_raw = entry.get("dc:creator", "") or entry.get("authors", "")
+    authors_raw = entry.get("author", [])
     title = entry.get("dc:title", "")
     journal = entry.get("prism:publicationName", "")
     volume = entry.get("prism:volume", "")
@@ -216,12 +216,16 @@ def add_citation_formatted(doc, entry, global_index, abbreviated=True, extra_ind
     pages = entry.get("prism:pageRange", "") or entry.get("page-range", "")
     year = (entry.get("prism:coverDate", "") or "")[:4]
     doi = entry.get("prism:doi", "")
-
-    # formatear autores abreviados
-    if abbreviated and authors_raw:
-        authors = authors_raw  # aquí aplica tu lógica de abreviación existente
-    else:
-        authors = authors_raw
+    
+    authors = ''
+    for i, author in enumerate(authors_raw):
+        if i == len(authors_raw) - 1:
+            authors += f'and {author.get('initials')} {author.get('surname')}.'
+            continue
+        authors += f'{author.get('initials')} {author.get('surname')}'
+        if not i == len(authors_raw) - 1:
+            authors += ', '
+    authors = authors.strip()
 
     number_text = f"[{global_index}]"
     journal = jabbreviation2(journal) if abbreviated else journal
@@ -253,8 +257,8 @@ def add_citation_formatted(doc, entry, global_index, abbreviated=True, extra_ind
         add_hyperlink(para, doi, f"https://doi.org/{doi}")
 
 
-def generate_docx(json_input, output) -> None:
-    data = json.loads(json_input)
+def generate_docx(input, cites_input, output) -> None:    
+    data = json.loads(input)        
     entries = data.get("search-results", {}).get("entry", [])
 
     def get_year(e):
@@ -297,17 +301,22 @@ def generate_docx(json_input, output) -> None:
         cited_count = int(entry.get("citedby-count", 0))
         eid = entry.get("eid", "")
         short_title = entry.get("dc:title", "")[:55]
-        print(f" [{global_index:>3}/{total}] {short_title}... (citado: {cited_count}) -> EID: {eid}")
+        print(f" [{global_index:>3}/{total}] {short_title}... (cited by {cited_count} papers)")
 
         add_citation_formatted(doc, entry, global_index, abbreviated=True)
-
-        if cited_count > 0 and eid:
-            cites_data = fetch_citing_articles(
-                eid,
-                "db914ab9d5f084e447fa55aa8c441393",
-                "d7e05f3ac9d63a6d51b9170681078e96",
-            )
-            cites = cites_data.get("search-results", {}).get("entry", [])
+        
+        if cited_count > 0 and eid and cites_input:
+            eid_input = Path(f"output/{cites_input}_{eid}_citedby.json").resolve()
+            eid_file_data = get_data_from_file(eid_input)
+                
+            try:
+                cites_data = json.loads(eid_file_data)
+            except json.JSONDecodeError as e:
+                print(f"Error: Failed to decode JSON. {e.msg}")
+                print(f"Location: Line {e.lineno}, Column {e.colno}")
+                continue
+            
+            cites = cites_data.get("search-results", {}).get("entry", [])            
 
             label_para = doc.add_paragraph()
             label_para.paragraph_format.left_indent = Cm(0.8)
@@ -330,3 +339,4 @@ def generate_docx(json_input, output) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
     print(f"\n[Info] — DOCX creado: {output_path} ({total} artículos)")
+

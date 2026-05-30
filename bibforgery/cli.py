@@ -1,29 +1,4 @@
 #!/usr/bin/python3 -u
-"""
-BibForgery v1.0
-Script para obtener artículos de Scopus y convertirlos a distintos formatos.
-
-Creado por:
-Eduardo Escalante Pacheco
-17-abril-2026
-
-#### Uso:
-    python3 bibforgery.py [--fetch AUTHOR_ID] [-f {text,json}] [-i INPUT] [-o OUTPUT]
-    python3 bibforgery.py [-f {text,json,pdf}] [-i INPUT] [-o OUTPUT]
-
-#### Opciones:
-    --fetch AUTHOR_ID   (opcional) Obtiene artículos del autor desde Scopus
-    --parse             (opcional) Indica que se va a parsear un archivo BibTex
-    -f, --format        (opcional) Formato de salida: text o json
-    -i, --input         (opcional) Archivo de entrada (default: input.txt)
-    -o, --output        (opcional) Archivo de salida (default: output.txt)
-
-#### Ejemplos:
-    python3 bibforgery.py --fetch 56000743500
-    python3 bibforgery.py -f txt -i data.bib -o out.txt
-    python3 bibforgery.py -f json -i data.bib -o out.json
-    python3 bibforgery.py -f pdf -i input.bib -o output.pdf
-"""
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -56,9 +31,7 @@ def dump_data_to_bib_file(data: str, output_file="output.bib") -> None:
 
 
 def resolve_name(prefix, name, extension):
-    basename = Path(f"{prefix}/{name}")
-    output = basename.with_name(basename.stem + f'.{extension}')
-    return output
+    return Path(f"{prefix}/{name}.{extension}")
 
 
 def main():
@@ -101,25 +74,25 @@ def main():
     args = parser.parse_args()
 
     if args.fetch_cites:
-        data = fetch_citing_articles(args.fetch_cites, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
+        base_data = fetch_citing_articles(args.fetch_cites, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
 
         output_path_base = Path(f"output/{args.output}" if args.output else "output/result.txt")
-        output_path = output_path_base.with_name(output_path_base.stem + "_raw.json")
-        dump_json_to_file(data, output_path)
+        base_input_file = output_path_base.with_name(output_path_base.stem + "_raw.json")
+        dump_json_to_file(base_data, base_input_file)
 
-        bib_data = data_to_bibtex(data)
+        bib_data = data_to_bibtex(base_data)
         bib_output_file = output_path_base.with_name(output_path_base.stem + ".bib")
         dump_data_to_bib_file(bib_data, bib_output_file)
         return
 
     if args.fetch:
-        data = fetch_papers_by_author(args.fetch, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
-        output_path = resolve_name('output', f'{args.output}_response', 'json')        
-        dump_json_to_file(data, output_path)
-        print(f"Listo: {output_path}")
+        base_data = fetch_papers_by_author(args.fetch, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
+        base_input_file = resolve_name('output', f'{args.output}_response', 'json')        
+        dump_json_to_file(base_data, base_input_file)
+        print(f"Listo: {base_input_file}")
 
 
-        bib_data = data_to_bibtex(data)        
+        bib_data = data_to_bibtex(base_data)        
         bib_output_file = resolve_name('output', f'{args.output}', 'bib')        
         dump_data_to_bib_file(bib_data, bib_output_file)
         print(f"Listo: {bib_output_file}\n")
@@ -133,7 +106,7 @@ def main():
                 except (ValueError, TypeError):
                     return 0
 
-            entries = data.get("search-results", {}).get("entry", [])
+            entries = base_data.get("search-results", {}).get("entry", [])
             sorted_entries = sorted(entries, key=get_year, reverse=True)
             total = len(sorted_entries)
 
@@ -146,66 +119,65 @@ def main():
 
                 if cited_count > 0 and eid:
                     cites_data = fetch_citing_articles(eid, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN)
-                    citedby_json_filename = resolve_name('output', f'{args.output}_citedby', 'json')
+                    citedby_json_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'json')
                     dump_json_to_file(cites_data, citedby_json_filename)
                     print(f"   Listo: {citedby_json_filename}")
 
-                    citedby_bibtex_str = data_to_bibtex(data)
-                    citedby_bib_filename = resolve_name('output', f'{args.output}_citedby', 'bib')                    
+                    citedby_bibtex_str = data_to_bibtex(base_data)
+                    citedby_bib_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'bib')                    
                     dump_data_to_bib_file(citedby_bibtex_str, citedby_bib_filename)
                     print(f"   Listo: {citedby_bib_filename}\n")
-                     
         return
 
     if not args.parse or not args.format:
         parser.error("Debes especificar el tipo de uso: --fetch ó --parse")
 
     if args.format == "json":
-        output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
-        o_f_ext = output_path.with_name(output_path.stem + ".json")
-        data = get_data_from_file(args.input)
-        json_as_bytes = generate_json(data)
+        base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
+        o_f_ext = base_input_file.with_name(base_input_file.stem + ".json")
+        base_data = get_data_from_file(args.input)
+        json_as_bytes = generate_json(base_data)
 
-        output_path = Path(o_f_ext).resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "wb") as f:
+        base_input_file = Path(o_f_ext).resolve()
+        base_input_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(base_input_file, "wb") as f:
             f.write(json_as_bytes.getvalue())
 
         print("[Info] — JSON created")
 
     elif args.format == "text":
-        output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
-        o_f_ext = output_path.with_name(output_path.stem + ".txt")
-        data = get_data_from_file(args.input)
-        text_as_bytes = generate_txt(data)
+        base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
+        o_f_ext = base_input_file.with_name(base_input_file.stem + ".txt")
+        base_data = get_data_from_file(args.input)
+        text_as_bytes = generate_txt(base_data)
 
-        output_path = Path(o_f_ext).resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "wb") as file:
+        base_input_file = Path(o_f_ext).resolve()
+        base_input_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(base_input_file, "wb") as file:
             file.write(text_as_bytes.getvalue())
 
         print("[Info] — Data created")
 
     elif args.format == "docx" or args.format == "word":
-        output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
-        o_f_ext = output_path.with_name(output_path.stem + ".docx")
-        data = get_data_from_file(args.input)
-        docx_as_bytes = generate_docx(data, "output/word.docx")
-
-        # output_path = Path(o_f_ext).resolve()
-        # output_path.parent.mkdir(parents=True, exist_ok=True)
-        # with open(output_path, "wb") as f:
-        #     f.write(docx_as_bytes)
+        
+        base_input_file = resolve_name('output', f'{args.input}_response', 'json')          
+        base_data = get_data_from_file(base_input_file)        
+        if not base_data:
+            print('PUTA VERDA')
+            return
+            
+        docx_filename = resolve_name('output', args.output, 'docx')   
+        generate_docx(base_data, args.input, docx_filename)
 
     elif args.format == "pdf":
-        output_path = Path(f"output/{args.output}" if args.output else "output/parse_result")
-        o_f_ext = output_path.with_name(output_path.stem + ".pdf")
-        data = get_data_from_file(args.input)
-        pdf_as_bytes = generate_pdf(data)
+        base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
+        o_f_ext = base_input_file.with_name(base_input_file.stem + ".pdf")
+        base_data = get_data_from_file(args.input)
+        pdf_as_bytes = generate_pdf(base_data)
 
-        output_path = Path(o_f_ext).resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "wb") as f:
+        base_input_file = Path(o_f_ext).resolve()
+        base_input_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(base_input_file, "wb") as f:
             f.write(pdf_as_bytes)
 
         print("[Info] — PDF created")

@@ -3,9 +3,10 @@ from pathlib import Path
 from lxml import etree
 import requests, time, re
 
+
 def clean_crossref_title(title: str) -> str:
     if not title:
-        return ''
+        return ""
     title = re.sub(r"\s*\n\s*", " ", title)
     title = re.sub(r">\s+<", "><", title)
     title = re.sub(r"\s*(</?(?:sub|sup|i|b)>)\s*", r"\1", title)
@@ -14,6 +15,7 @@ def clean_crossref_title(title: str) -> str:
     title = re.sub(r"(\d)([A-Za-z])", r"\1 \2", title)
 
     return title.strip()
+
 
 def get_citedby_count_from_xml(root):
     node = root.find(".//{*}citedby-count")
@@ -40,19 +42,19 @@ def get_data_from_file(input) -> str:
     input_path = Path(input).resolve()
     if not input_path.exists():
         print(f"Error: No se encuentra el archivo de entrada {input_path}")
-        return
+        return None
     with open(input_path, "r", encoding="utf-8") as file:
         data = file.read()
     return data
 
 
-def data_to_bibtex(data) -> str:
+def data_to_bibtex(data, check_title=False) -> str:
     entries = data.get("search-results", {}).get("entry", [])
     full_bib = ""
 
     for entry in entries:
-        alt_title = None
         title = entry.get("dc:title", "")
+        alt_title = title
         authors = entry.get("author", [])
         author_list = [f"{a.get('surname','')}, {a.get('given-name','')}".strip(", ") for a in authors]
         authors_str = " and ".join(author_list) if author_list else entry.get("dc:creator", "Unknown")
@@ -66,12 +68,12 @@ def data_to_bibtex(data) -> str:
         issue = entry.get("prism:issueIdentifier", "")
         pages = entry.get("prism:pageRange", "")
         eid = entry.get("eid", "")
-        citedby_count = int(entry.get('citedby-count', "0"))
+        citedby_count = int(entry.get("citedby-count", "0"))
         doi = entry.get("prism:doi", "")
-        if doi:
-            crossref_data = fetch_crossref_from_doi(doi, 'contact@watoc2028.org')
+        if doi and check_title:
+            crossref_data = fetch_crossref_from_doi(doi, "contact@watoc2028.org")
             if crossref_data:
-                alt_title = crossref_data.get('message', {}).get('title', [''])[0]
+                alt_title = crossref_data.get("message", {}).get("title", [""])[0]
                 alt_title = clean_crossref_title(alt_title)
                 time.sleep(0.3)
 
@@ -152,10 +154,6 @@ def fetch_content_article(scopus_id, api_key="", inst_token=""):
     print(f"   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
     time.sleep(0.2)
     return root
-
-
-
-
 
 
 def fetch_papers_by_author(author_id: str, api_key="", inst_token="", max_results=500):
