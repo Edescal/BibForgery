@@ -49,7 +49,7 @@ def get_data_from_file(input) -> str:
 
 
 def data_to_bibtex(data, check_title=False) -> str:
-    entries = data.get("search-results", {}).get("entry", [])
+    entries = data.get("papers", [])
     full_bib = ""
 
     for entry in entries:
@@ -57,7 +57,7 @@ def data_to_bibtex(data, check_title=False) -> str:
         alt_title = title
         authors = entry.get("author", [])
         author_list = [f"{a.get('surname','')}, {a.get('given-name','')}".strip(", ") for a in authors]
-        authors_str = " and ".join(author_list) if author_list else entry.get("dc:creator", "Unknown")
+        authors_str = " and ".join(author_list) if author_list else "A. Unknown"
 
         journal = entry.get("prism:publicationName", "")
         date = entry.get("prism:coverDate", "0000-00-00")
@@ -207,9 +207,7 @@ def fetch_papers_by_author(author_id: str, api_key="", inst_token="", max_result
             break
 
     return {
-        "search-results": {
-            "entry": all_entries,
-        },
+        "papers": process_scopus_response(all_entries),
     }
 
 
@@ -269,7 +267,40 @@ def fetch_citing_articles(eid: str, api_key="", inst_token="", max_results=500):
             break
 
     return {
-        "search-results": {
-            "entry": all_entries,
-        },
+        "papers": process_scopus_response(all_entries),
     }
+
+
+def process_scopus_response(entries):
+    FIELDS = [
+        "eid",
+        "dc:title",
+        "prism:publicationName",
+        "prism:coverDate",
+        "prism:volume",
+        "prism:issueIdentifier",
+        "prism:pageRange",
+        "citedby-count",
+        "prism:doi",
+    ]
+
+    data = []
+
+    for entry in entries:
+        item = {
+            field: entry.get(field)
+            for field in FIELDS
+        }
+
+        item["author"] = [
+            {
+                "surname": author.get("surname"),
+                "given-name": author.get("given-name"),
+                "initials": author.get("initials"),
+            }
+            for author in entry.get("author", [])
+        ]
+
+        data.append(item)
+
+    return data

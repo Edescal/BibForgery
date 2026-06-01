@@ -2,8 +2,10 @@ from bibtexparser.library import Library
 from bibtexparser.model import Field, Entry
 from collections.abc import MutableSequence
 from collections import defaultdict
+from pathlib import Path
+from .tools import get_data_from_file
 from .libjabbrev2 import jabbreviation2
-import bibtexparser
+import bibtexparser, json
 
 
 def parse_bibtex(input) -> Library:
@@ -206,6 +208,18 @@ def process_entries_as_json(bib_entries: MutableSequence[Entry]):
             "pages": entry.get("pages").value if entry.get("pages") else "",
             "citedby-count": entry.get("citedby-count"),
         }
+        # if full:
+        #     filepath = Path(f'output/{name}_{entry.key}_citedby.json').resolve()
+        #     if filepath.is_file():
+        #         cited_data = get_data_from_file(filepath)
+        #         json_data = json.loads(cited_data)
+                
+                
+                
+            
+            # data['citedby-papers'] = {
+                
+            # }
         yield data
 
 

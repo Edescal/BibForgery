@@ -91,14 +91,13 @@ def main():
         dump_json_to_file(base_data, base_input_file)
         print(f"Listo: {base_input_file}")
 
-
-        bib_data = data_to_bibtex(base_data)        
-        bib_output_file = resolve_name('output', f'{args.output}', 'bib')        
-        dump_data_to_bib_file(bib_data, bib_output_file)
-        print(f"Listo: {bib_output_file}\n")
+        # bib_data = data_to_bibtex(base_data)        
+        # bib_output_file = resolve_name('output', f'{args.output}', 'bib')        
+        # dump_data_to_bib_file(bib_data, bib_output_file)
+        # print(f"Listo: {bib_output_file}\n")
 
         if args.full:
-            print('Artículos citados:')
+            print('\nArtículos citados:')
             
             def get_year(e):
                 d = e.get("prism:coverDate", "0000")
@@ -106,10 +105,10 @@ def main():
                 except (ValueError, TypeError):
                     return 0
 
-            entries = base_data.get("search-results", {}).get("entry", [])
+            entries = base_data.get("papers", [])
             sorted_entries = sorted(entries, key=get_year, reverse=True)
             total = len(sorted_entries)
-
+            
             for i, entry in enumerate(sorted_entries):
                 global_index = total - i
                 cited_count = int(entry.get("citedby-count", 0))
@@ -121,12 +120,12 @@ def main():
                     cites_data = fetch_citing_articles(eid, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN)
                     citedby_json_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'json')
                     dump_json_to_file(cites_data, citedby_json_filename)
-                    print(f"   Listo: {citedby_json_filename}")
+                    print(f"   Listo: {citedby_json_filename}\n")
 
-                    citedby_bibtex_str = data_to_bibtex(base_data)
-                    citedby_bib_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'bib')                    
-                    dump_data_to_bib_file(citedby_bibtex_str, citedby_bib_filename)
-                    print(f"   Listo: {citedby_bib_filename}\n")
+                    # citedby_bibtex_str = data_to_bibtex(base_data)
+                    # citedby_bib_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'bib')                    
+                    # dump_data_to_bib_file(citedby_bibtex_str, citedby_bib_filename)
+                    # print(f"   Listo: {citedby_bib_filename}\n")
         return
 
     if not args.parse or not args.format:

@@ -45,7 +45,7 @@ def generate_txt(input: str) -> bytes:
     return buffer
 
 
-def generate_json(input) -> bytes:
+def generate_json(input, full = False) -> bytes:
     """
     Genera citas en formato JSON a partir
     de un archivo en formato Bibtex y lo
@@ -60,7 +60,7 @@ def generate_json(input) -> bytes:
 
     buffer = io.BytesIO()
     buffer.write(b"[")
-    yielder = process_entries_as_json(bibtext.entries)
+    yielder = process_entries_as_json(bibtext.entries, full)
     try:
         first = next(yielder)
         buffer.write(json.dumps(first, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
@@ -259,7 +259,7 @@ def add_citation_formatted(doc, entry, global_index, abbreviated=True, extra_ind
 
 def generate_docx(input, cites_input, output) -> None:    
     data = json.loads(input)        
-    entries = data.get("search-results", {}).get("entry", [])
+    entries = data.get("papers", [])
 
     def get_year(e):
         d = e.get("prism:coverDate", "0000")
@@ -316,7 +316,7 @@ def generate_docx(input, cites_input, output) -> None:
                 print(f"Location: Line {e.lineno}, Column {e.colno}")
                 continue
             
-            cites = cites_data.get("search-results", {}).get("entry", [])            
+            cites = cites_data.get("papers", [])            
 
             label_para = doc.add_paragraph()
             label_para.paragraph_format.left_indent = Cm(0.8)
