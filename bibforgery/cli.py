@@ -10,6 +10,7 @@ from .tools import (
 )
 from .generators import (
     generate_json,
+    generate_full_json,
     generate_pdf,
     generate_txt,
     generate_docx,
@@ -94,9 +95,9 @@ def main():
         base_input_file = output_path_base.with_name(output_path_base.stem + "_raw.json")
         dump_json_to_file(base_data, base_input_file)
 
-        bib_data = data_to_bibtex(base_data)
-        bib_output_file = output_path_base.with_name(output_path_base.stem + ".bib")
-        dump_data_to_bib_file(bib_data, bib_output_file)
+        # bib_data = data_to_bibtex(base_data)
+        # bib_output_file = output_path_base.with_name(output_path_base.stem + ".bib")
+        # dump_data_to_bib_file(bib_data, bib_output_file)
         return
 
     if args.fetch:
@@ -160,15 +161,22 @@ def main():
         parser.error("Debes especificar el tipo de uso: --fetch ó --parse")
 
     if args.format == "json":
-        base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
-        o_f_ext = base_input_file.with_name(base_input_file.stem + ".json")
-        base_data = get_data_from_file(args.input)
-        json_as_bytes = generate_json(base_data)
+        # base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
+        # o_f_ext = base_input_file.with_name(base_input_file.stem + ".json")
+        # base_data = get_data_from_file(args.input)
+        # json_as_bytes = generate_json(base_data)
 
-        base_input_file = Path(o_f_ext).resolve()
-        base_input_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(base_input_file, "wb") as f:
-            f.write(json_as_bytes.getvalue())
+        # base_input_file = Path(o_f_ext).resolve()
+        # base_input_file.parent.mkdir(parents=True, exist_ok=True)
+        # with open(base_input_file, "wb") as f:
+        #     f.write(json_as_bytes.getvalue())
+
+        json_data = generate_full_json(args.input, include_citations=args.full)
+
+        output_path = resolve_name("output", args.output, "json")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
 
         print("[Info] — JSON created")
 

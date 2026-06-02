@@ -64,6 +64,76 @@ def generate_json(input, full=False) -> bytes:
     return buffer
 
 
+def generate_full_json(input: str, include_citations=False):
+    filepath = Path(f"output/{input}_response.json").resolve()
+    raw_data = get_data_from_file(filepath)
+    source_data = json.loads(raw_data)
+
+    
+    def process_entry(entry):
+        eid = entry.get("eid", "")
+        
+        fulldate = entry.get("prism:coverDate", "0000-00-00")
+        year = int(fulldate[:4]) if len(fulldate) >= 4 else 0
+        month = int(fulldate[5:7]) if len(fulldate) >= 7 else 0
+        day = int(fulldate[8:10]) if len(fulldate) >= 10 else 0
+
+        journal = entry.get("prism:publicationName", "")
+        journal_abbr = jabbreviation2(journal)
+        
+        citedby_count = int(entry.get("citedby-count", 0))
+        item = {
+            "id": eid,
+            "authors": entry.get("author", []),
+            "title": entry.get("dc:title"),
+            "year": year,
+            "month": month,
+            "day": day,
+            "journal": journal,
+            "journal_abbrev": journal_abbr,
+            "doi": entry.get("prism:doi", ""),
+            "volume": entry.get("prism:volume", ""),
+            "number": entry.get("prism:issueIdentifier", ""),
+            "pages": entry.get("prism:pageRange", ""),
+            "citedby-count": citedby_count,
+        }
+        return item
+    
+    papers = []
+    for entry in source_data.get("papers", []):
+        item = process_entry(entry)
+        eid = item['id']
+        citedby_count = item['citedby-count']
+        
+        if citedby_count > 0 and eid and input and include_citations:
+            eid_input = Path(f"output/{input}/{input}_{eid}_citedby.json").resolve()
+            if not eid_input.is_file():
+                print(f"[Warn] File {eid_input} not found!")
+                continue
+
+            eid_file_data = get_data_from_file(eid_input)
+
+            try:
+                cites_data = json.loads(eid_file_data)
+            except json.JSONDecodeError as e:
+                print(f"Error: Failed to decode JSON. {e.msg}")
+                print(f"Location: Line {e.lineno}, Column {e.colno}")
+                continue
+
+            cites = cites_data.get("papers", [])
+            
+            citations = []
+            for entry_c in cites:
+                item_c = process_entry(entry_c)
+                citations.append(item_c)
+                
+            item['citedby-papers'] = citations
+            
+        papers.append(item)
+
+    return papers
+
+
 def generate_pdf(input) -> bytes | None:
     """
     Generador de archivo PDF a partir
@@ -188,7 +258,7 @@ def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_wid
     body_runs   : list of (text, bold, italic, font_size_pt)
     """
     para = doc.add_paragraph()
-    set_paragraph_spacing(para, before=0, after=5)
+    set_paragraph_spacing(para, before=0, after=6)
 
     left = Cm(indent_cm + number_width_cm)
     hanging = Cm(number_width_cm)
@@ -200,7 +270,7 @@ def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_wid
     # número
     run_num = para.add_run(number_text + "\t")
     run_num.font.name = "Arial"
-    run_num.font.size = Pt(11)
+    run_num.font.size = Pt(10)
     run_num.font.bold = False
 
     # set tab stop at number_width_cm so text aligns after the number
@@ -208,6 +278,7 @@ def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_wid
     tabs = OxmlElement("w:tabs")
     tab = OxmlElement("w:tab")
     tab.set(qn("w:val"), "left")
+
     # convert cm to twips (1 cm ≈ 567 twips)
     tab.set(qn("w:pos"), str(int(number_width_cm * 567)))
     tabs.append(tab)
@@ -261,20 +332,21 @@ def add_citation_formatted(
             if not i == len(authors_raw) - 1:
                 authors += "; "
 
+        FONT_SIZE = 11
         if authors:
-            runs.append((authors + " ", False, False, 11, False))
+            runs.append((authors + " ", False, False, FONT_SIZE, False))
         if title:
-            runs.append((title + ". ", False, False, 11, True))
+            runs.append((title + ". ", False, False, FONT_SIZE, True))
         if journal:
-            runs.append((journal, False, True, 11, False))
+            runs.append((journal, False, True, FONT_SIZE, False))
         if year:
-            runs.append((f" {year},", True, False, 11, False))
+            runs.append((f" {year},", True, False, FONT_SIZE, False))
         if volume:
-            runs.append((f" {volume}", False, True, 11, False))
+            runs.append((f" {volume}", False, True, FONT_SIZE, False))
         if issue:
-            runs.append((f"({issue}),", False, False, 11, False))
+            runs.append((f"({issue}),", False, False, FONT_SIZE, False))
         if pages:
-            runs.append((f"{pages}.", False, False, 11, False))
+            runs.append((f"{pages}.", False, False, FONT_SIZE, False))
 
     elif citation_style == CitationStyle.APS:
         for i, author in enumerate(authors_raw):
@@ -286,19 +358,19 @@ def add_citation_formatted(
                 authors += ", "
 
         if authors:
-            runs.append((authors + " ", False, False, 11, False))
+            runs.append((authors + " ", False, False, FONT_SIZE, False))
         if title:
-            runs.append((title + ". ", False, False, 11, True))
+            runs.append((title + ". ", False, False, FONT_SIZE, True))
         if journal:
-            runs.append((journal, False, True, 11, False))
+            runs.append((journal, False, True, FONT_SIZE, False))
         if volume:
-            runs.append((f" {volume}", True, False, 11, False))
+            runs.append((f" {volume}", True, False, FONT_SIZE, False))
         if issue:
-            runs.append((f"({issue})", False, False, 11, False))
+            runs.append((f"({issue})", False, False, FONT_SIZE, False))
         if pages:
-            runs.append((f", {pages}", False, False, 11, False))
+            runs.append((f", {pages}", False, False, FONT_SIZE, False))
         if year:
-            runs.append((f" ({year}).", False, False, 11, False))
+            runs.append((f" ({year}).", False, False, FONT_SIZE, False))
 
     para = add_hanging_paragraph(doc, number_text, runs, indent_cm=indent_cm)
 
@@ -346,7 +418,7 @@ def generate_docx(input, output, include_citations=False, citation_style=Citatio
     # título
     title_para = doc.add_paragraph()
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title_para.paragraph_format.space_after = Pt(12)
+    title_para.paragraph_format.space_after = Pt(6)
     r = title_para.add_run("Publications")
     r.font.bold = True
     r.font.size = Pt(12)
@@ -395,9 +467,9 @@ def generate_docx(input, output, include_citations=False, citation_style=Citatio
                 )
 
         # separador visual entre entradas principales
-        sep = doc.add_paragraph()
-        sep.paragraph_format.space_before = Pt(0)
-        sep.paragraph_format.space_after = Pt(0)
+        # sep = doc.add_paragraph()
+        # sep.paragraph_format.space_before = Pt(0)
+        # sep.paragraph_format.space_after = Pt(0)
 
     output_path = Path(output).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
