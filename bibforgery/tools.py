@@ -17,30 +17,9 @@ def clean_crossref_title(title: str) -> str:
     return title.strip()
 
 
-def get_citedby_count_from_xml(root):
-    node = root.find(".//{*}citedby-count")
-    return node.text if node is not None else "0"
-
-
-def get_title_from_xml(root):
-    title = root.find(".//{*}titletext")
-    if title is None:
-        return ""
-    html = etree.tostring(title, encoding="unicode", method="html")
-    start = html.find(">") + 1
-    end = html.rfind("</")
-    title = html[start:end]
-    title = title.replace("<inf>", "<sub>")
-    title = title.replace("</inf>", "</sub>")
-    title = re.sub(r"\s+(<sub>)", r"\1", title)
-    title = re.sub(r"\s+(<sup>)", r"\1", title)
-    title = re.sub(r"\s+", " ", title).strip()
-    return title
-
-
 def get_data_from_file(input) -> str:
     input_path = Path(input).resolve()
-    if not input_path.exists():
+    if not input_path.exists() or not input_path.is_file():
         print(f"Error: No se encuentra el archivo de entrada {input_path}")
         return None
     with open(input_path, "r", encoding="utf-8") as file:

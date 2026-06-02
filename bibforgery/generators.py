@@ -45,7 +45,7 @@ def generate_txt(input: str) -> bytes:
     return buffer
 
 
-def generate_json(input, full = False) -> bytes:
+def generate_json(input, full=False) -> bytes:
     """
     Genera citas en formato JSON a partir
     de un archivo en formato Bibtex y lo
@@ -201,11 +201,15 @@ def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_wid
     return para
 
 
-def add_citation_formatted(doc, entry, global_index, abbreviated=True, extra_indent=False):
-    """
-    Reemplaza add_citation con formato ACS-style y numeración inversa visible.
-    Ajusta los campos a lo que devuelva tu entry de Scopus.
-    """
+def add_citation_formatted(
+    doc,
+    entry,
+    global_index,
+    abbreviated=True,
+    extra_indent=False,
+    citation_style: CitationStyle = CitationStyle.ACS,
+):
+    citation_style = CitationStyle(citation_style)
     indent_cm = 0.8 if extra_indent else 0.0
 
     authors_raw = entry.get("author", [])
@@ -216,36 +220,60 @@ def add_citation_formatted(doc, entry, global_index, abbreviated=True, extra_ind
     pages = entry.get("prism:pageRange", "") or entry.get("page-range", "")
     year = (entry.get("prism:coverDate", "") or "")[:4]
     doi = entry.get("prism:doi", "")
-    
-    authors = ''
-    for i, author in enumerate(authors_raw):
-        if i == len(authors_raw) - 1:
-            authors += f'and {author.get('initials')} {author.get('surname')}.'
-            continue
-        authors += f'{author.get('initials')} {author.get('surname')}'
-        if not i == len(authors_raw) - 1:
-            authors += ', '
-    authors = authors.strip()
 
+    authors = ""
     number_text = f"[{global_index}]"
     journal = jabbreviation2(journal) if abbreviated else journal
 
     # construir runs: (text, bold, italic, pt)
     runs = []
-    if authors:
-        runs.append((authors + " ", False, False, 11))
-    if title:
-        runs.append((title + ". ", False, False, 11))
-    if journal:
-        runs.append((journal, False, True, 11))  # journal en cursiva
-    if volume:
-        runs.append((f" {volume}", True, False, 11))  # volumen en negrita
-    if issue:
-        runs.append((f"({issue})", False, False, 11))
-    if pages:
-        runs.append((f", {pages}", False, False, 11))
-    if year:
-        runs.append((f" ({year})", False, False, 11))
+    if citation_style == CitationStyle.ACS:
+        for i, author in enumerate(authors_raw):
+            if i == len(authors_raw) - 1:
+                authors += f"{author.get('surname')} {author.get('initials')}"
+                continue
+            authors += f"{author.get('surname')} {author.get('initials')}"
+            if not i == len(authors_raw) - 1:
+                authors += "; "
+
+        if authors:
+            runs.append((authors + " ", False, False, 11))
+        if title:
+            runs.append((title + ". ", False, False, 11))
+        if journal:
+            runs.append((journal, False, True, 11))
+        if year:
+            runs.append((f" {year},", True, False, 11))
+        if volume:
+            runs.append((f" {volume}", False, True, 11))
+        if issue:
+            runs.append((f"({issue}),", False, False, 11))
+        if pages:
+            runs.append((f"{pages}.", False, False, 11))
+
+    elif citation_style == CitationStyle.APS:
+        for i, author in enumerate(authors_raw):
+            if i == len(authors_raw) - 1:
+                authors += f"and {author.get('initials')} {author.get('surname')}."
+                continue
+            authors += f"{author.get('initials')} {author.get('surname')}"
+            if not i == len(authors_raw) - 1:
+                authors += ", "
+
+        if authors:
+            runs.append((authors + " ", False, False, 11))
+        if title:
+            runs.append((title + ". ", False, False, 11))
+        if journal:
+            runs.append((journal, False, True, 11))
+        if volume:
+            runs.append((f" {volume}", True, False, 11))
+        if issue:
+            runs.append((f"({issue})", False, False, 11))
+        if pages:
+            runs.append((f", {pages}", False, False, 11))
+        if year:
+            runs.append((f" ({year})", False, False, 11))
 
     para = add_hanging_paragraph(doc, number_text, runs, indent_cm=indent_cm)
 
@@ -257,8 +285,11 @@ def add_citation_formatted(doc, entry, global_index, abbreviated=True, extra_ind
         add_hyperlink(para, doi, f"https://doi.org/{doi}")
 
 
-def generate_docx(input, cites_input, output) -> None:    
-    data = json.loads(input)        
+def generate_docx(input, output, include_citations=False, citation_style=CitationStyle.ACS) -> None:
+    filepath = Path(f"output/{input}_response.json").resolve()
+    raw_data = get_data_from_file(filepath)
+    data = json.loads(raw_data)
+
     entries = data.get("papers", [])
 
     def get_year(e):
@@ -290,11 +321,13 @@ def generate_docx(input, cites_input, output) -> None:
     # título
     title_para = doc.add_paragraph()
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title_para.paragraph_format.space_after = Pt(16)
+    title_para.paragraph_format.space_after = Pt(12)
     r = title_para.add_run("Publications")
     r.font.bold = True
     r.font.size = Pt(12)
     r.font.name = "Arial"
+
+    print(citation_style)
 
     for i, entry in enumerate(sorted_entries):
         global_index = total - i
@@ -303,20 +336,24 @@ def generate_docx(input, cites_input, output) -> None:
         short_title = entry.get("dc:title", "")[:55]
         print(f" [{global_index:>3}/{total}] {short_title}... (cited by {cited_count} papers)")
 
-        add_citation_formatted(doc, entry, global_index, abbreviated=True)
-        
-        if cited_count > 0 and eid and cites_input:
-            eid_input = Path(f"output/{cites_input}_{eid}_citedby.json").resolve()
+        add_citation_formatted(doc, entry, global_index, abbreviated=True, citation_style=citation_style)
+
+        if cited_count > 0 and eid and input and include_citations:
+            eid_input = Path(f"output/{input}/{input}_{eid}_citedby.json").resolve()
+            if not eid_input.is_file():
+                print(f"[Warn] File {eid_input} not found!")
+                continue
+
             eid_file_data = get_data_from_file(eid_input)
-                
+
             try:
                 cites_data = json.loads(eid_file_data)
             except json.JSONDecodeError as e:
                 print(f"Error: Failed to decode JSON. {e.msg}")
                 print(f"Location: Line {e.lineno}, Column {e.colno}")
                 continue
-            
-            cites = cites_data.get("papers", [])            
+
+            cites = cites_data.get("papers", [])
 
             label_para = doc.add_paragraph()
             label_para.paragraph_format.left_indent = Cm(0.8)
@@ -328,15 +365,16 @@ def generate_docx(input, cites_input, output) -> None:
             r.font.name = "Arial"
 
             for j, cite_entry in enumerate(cites, start=1):
-                add_citation_formatted(doc, cite_entry, j, abbreviated=True, extra_indent=True)
+                add_citation_formatted(
+                    doc, cite_entry, j, abbreviated=True, extra_indent=True, citation_style=citation_style
+                )
 
         # separador visual entre entradas principales
         sep = doc.add_paragraph()
         sep.paragraph_format.space_before = Pt(0)
-        sep.paragraph_format.space_after = Pt(4)
+        sep.paragraph_format.space_after = Pt(0)
 
     output_path = Path(output).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
     print(f"\n[Info] — DOCX creado: {output_path} ({total} artículos)")
-

@@ -23,6 +23,7 @@ def dump_json_to_file(data, output="output.json") -> None:
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
+
 def dump_data_to_bib_file(data: str, output_file="output.bib") -> None:
     output_path = Path(output_file).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,6 +71,12 @@ def main():
         default="",
         help="Formato de salida",
     )
+    parser.add_argument(
+        "--style",
+        metavar="{aps,acs}",
+        choices=["aps", "acs"],
+        default="acs",
+    )
 
     args = parser.parse_args()
 
@@ -87,28 +94,29 @@ def main():
 
     if args.fetch:
         base_data = fetch_papers_by_author(args.fetch, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
-        base_input_file = resolve_name('output', f'{args.output}_response', 'json')        
+        base_input_file = resolve_name("output", f"{args.output}_response", "json")
         dump_json_to_file(base_data, base_input_file)
         print(f"Listo: {base_input_file}")
 
-        # bib_data = data_to_bibtex(base_data)        
-        # bib_output_file = resolve_name('output', f'{args.output}', 'bib')        
+        # bib_data = data_to_bibtex(base_data)
+        # bib_output_file = resolve_name('output', f'{args.output}', 'bib')
         # dump_data_to_bib_file(bib_data, bib_output_file)
         # print(f"Listo: {bib_output_file}\n")
 
         if args.full:
-            print('\nArtículos citados:')
-            
+            print("\nArtículos citados:")
+
             def get_year(e):
                 d = e.get("prism:coverDate", "0000")
-                try:  return int(d[:4])
+                try:
+                    return int(d[:4])
                 except (ValueError, TypeError):
                     return 0
 
             entries = base_data.get("papers", [])
             sorted_entries = sorted(entries, key=get_year, reverse=True)
             total = len(sorted_entries)
-            
+
             for i, entry in enumerate(sorted_entries):
                 global_index = total - i
                 cited_count = int(entry.get("citedby-count", 0))
@@ -118,12 +126,14 @@ def main():
 
                 if cited_count > 0 and eid:
                     cites_data = fetch_citing_articles(eid, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN)
-                    citedby_json_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'json')
+                    citedby_json_filename = resolve_name(
+                        f"output/{args.output}", f"{args.output}_{eid}_citedby", "json"
+                    )
                     dump_json_to_file(cites_data, citedby_json_filename)
                     print(f"   Listo: {citedby_json_filename}\n")
 
                     # citedby_bibtex_str = data_to_bibtex(base_data)
-                    # citedby_bib_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'bib')                    
+                    # citedby_bib_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'bib')
                     # dump_data_to_bib_file(citedby_bibtex_str, citedby_bib_filename)
                     # print(f"   Listo: {citedby_bib_filename}\n")
         return
@@ -158,17 +168,20 @@ def main():
         print("[Info] — Data created")
 
     elif args.format == "docx" or args.format == "word":
-        
-        base_input_file = resolve_name('output', f'{args.input}_response', 'json')          
-        base_data = get_data_from_file(base_input_file)        
-        if not base_data:
-            print('PUTA VERDA')
-            return
+        if args.style.lower() == 'acs':
+           style = 1 
+        else:
+            style = 2
             
-        docx_filename = resolve_name('output', args.output, 'docx')   
-        generate_docx(base_data, args.input, docx_filename)
-
+        print(style)
+        generate_docx(
+            args.input,
+            output=resolve_name("output", args.output, "docx"),
+            include_citations=args.full,
+            citation_style=style
+        )
     elif args.format == "pdf":
+
         base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
         o_f_ext = base_input_file.with_name(base_input_file.stem + ".pdf")
         base_data = get_data_from_file(args.input)
