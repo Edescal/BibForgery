@@ -105,6 +105,38 @@ from docx.shared import Pt, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from bs4 import BeautifulSoup, NavigableString, Tag
+
+
+def add_html_run(paragraph, html, bold=False, italic=False, size=11):
+    soup = BeautifulSoup(html, "html.parser")
+
+    def walk(node, b=False, i=False, sub=False, sup=False):
+        if isinstance(node, NavigableString):
+            text = str(node)
+            if text:
+                run = paragraph.add_run(text)
+                run.font.name = "Arial"
+                run.font.size = Pt(size)
+                run.bold = bold or b
+                run.italic = italic or i
+                run.font.subscript = sub
+                run.font.superscript = sup
+            return
+
+        if not isinstance(node, Tag):
+            return
+
+        b = b or node.name in ("b", "strong")
+        i = i or node.name in ("i", "em")
+        sub = sub or node.name == "sub"
+        sup = sup or node.name == "sup"
+
+        for child in node.children:
+            walk(child, b, i, sub, sup)
+
+    for child in soup.children:
+        walk(child)
 
 
 def add_hyperlink(paragraph, text, url):
@@ -181,12 +213,15 @@ def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_wid
     tabs.append(tab)
     pPr.append(tabs)
 
-    for text, bold, italic, size in body_runs:
-        r = para.add_run(text)
-        r.font.name = "Arial"
-        r.font.size = Pt(size or 11)
-        r.font.bold = bold
-        r.font.italic = italic
+    for text, bold, italic, size, is_html in body_runs:
+        if is_html:
+            add_html_run(para, text, bold, italic, size)
+        else:
+            r = para.add_run(text)
+            r.font.name = "Arial"
+            r.font.size = Pt(size or 11)
+            r.font.bold = bold
+            r.font.italic = italic
 
     return para
 
@@ -203,7 +238,7 @@ def add_citation_formatted(
     indent_cm = 0.8 if extra_indent else 0.0
 
     authors_raw = entry.get("author", [])
-    title = entry.get("xml:title", entry.get('dc:title', ''))
+    title = entry.get("xml:title", entry.get("dc:title", ""))
     journal = entry.get("prism:publicationName", "")
     volume = entry.get("prism:volume", "")
     issue = entry.get("prism:issueIdentifier", "")
@@ -227,19 +262,19 @@ def add_citation_formatted(
                 authors += "; "
 
         if authors:
-            runs.append((authors + " ", False, False, 11))
+            runs.append((authors + " ", False, False, 11, False))
         if title:
-            runs.append((title + ". ", False, False, 11))
+            runs.append((title + ". ", False, False, 11, True))
         if journal:
-            runs.append((journal, False, True, 11))
+            runs.append((journal, False, True, 11, False))
         if year:
-            runs.append((f" {year},", True, False, 11))
+            runs.append((f" {year},", True, False, 11, False))
         if volume:
-            runs.append((f" {volume}", False, True, 11))
+            runs.append((f" {volume}", False, True, 11, False))
         if issue:
-            runs.append((f"({issue}),", False, False, 11))
+            runs.append((f"({issue}),", False, False, 11, False))
         if pages:
-            runs.append((f"{pages}.", False, False, 11))
+            runs.append((f"{pages}.", False, False, 11, False))
 
     elif citation_style == CitationStyle.APS:
         for i, author in enumerate(authors_raw):
@@ -251,19 +286,19 @@ def add_citation_formatted(
                 authors += ", "
 
         if authors:
-            runs.append((authors + " ", False, False, 11))
+            runs.append((authors + " ", False, False, 11, False))
         if title:
-            runs.append((title + ". ", False, False, 11))
+            runs.append((title + ". ", False, False, 11, True))
         if journal:
-            runs.append((journal, False, True, 11))
+            runs.append((journal, False, True, 11, False))
         if volume:
-            runs.append((f" {volume}", True, False, 11))
+            runs.append((f" {volume}", True, False, 11, False))
         if issue:
-            runs.append((f"({issue})", False, False, 11))
+            runs.append((f"({issue})", False, False, 11, False))
         if pages:
-            runs.append((f", {pages}", False, False, 11))
+            runs.append((f", {pages}", False, False, 11, False))
         if year:
-            runs.append((f" ({year}).", False, False, 11))
+            runs.append((f" ({year}).", False, False, 11, False))
 
     para = add_hanging_paragraph(doc, number_text, runs, indent_cm=indent_cm)
 
