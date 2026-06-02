@@ -1,9 +1,24 @@
-from .libjabbrev2 import jabbreviation2
+from bs4 import BeautifulSoup, NavigableString, Tag
 from pathlib import Path
-from lxml import etree
-import requests, time, re
+from .libjabbrev2 import jabbreviation2
+import requests, time, re, json
+
+CACHE_FILE = Path("crossref_cache.json")
 
 
+def load_cache():
+    if CACHE_FILE.exists():
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_cache(cache):
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
+"""Deprecar??"""
 def clean_crossref_title(title: str) -> str:
     if not title:
         return ""
@@ -50,7 +65,7 @@ def data_to_bibtex(data, check_title=False) -> str:
         citedby_count = int(entry.get("citedby-count", "0"))
         doi = entry.get("prism:doi", "")
         if doi and check_title:
-            crossref_data = fetch_crossref_from_doi(doi, "contact@watoc2028.org")
+            crossref_data = get_title_from_crossref(doi, "contact@watoc2028.org")
             if crossref_data:
                 alt_title = crossref_data.get("message", {}).get("title", [""])[0]
                 alt_title = clean_crossref_title(alt_title)
@@ -95,10 +110,7 @@ def data_to_bibtex(data, check_title=False) -> str:
     return full_bib
 
 
-def fetch_crossref_from_doi(doi: str, mailto: str):
-    """
-    Get metadata from Crossref using DOI
-    """
+def get_title_from_crossref(doi: str, mailto: str):
     url = f"https://api.crossref.org/works/{doi}"
 
     headers = {"User-Agent": f"BibTool/1.0 (mailto:{mailto})"}
@@ -108,34 +120,89 @@ def fetch_crossref_from_doi(doi: str, mailto: str):
         print(f"Error {response.status_code}: {response.text}")
         return None
 
-    return response.json()
+    data = response.json()
+    title = data.get("message", {}).get("title", [""])[0]
+    return title
 
 
-def fetch_content_article(scopus_id, api_key="", inst_token=""):
-    headers = {
-        "X-ELS-APIKey": api_key,
-        "Accept": "application/xml",
-    }
+def clean_crossref_to_html(title: str) -> str:
+    ELEMENT_RE = re.compile(r"^[A-Z][a-z]?$")
 
-    if inst_token:
-        headers["X-ELS-Insttoken"] = inst_token
+    soup = BeautifulSoup(title, "html.parser")
 
-    print(f"Query for {scopus_id}")
-    res = requests.get(f"https://api.elsevier.com/content/abstract/scopus_id/{scopus_id}", headers=headers)
-    if res.status_code != 200:
-        print("Error:", res.status_code, res.text)
-        return None
+    tokens = []
 
-    root = etree.fromstring(res.content)
+    def walk(node):
+        if isinstance(node, NavigableString):
+            text = re.sub(r"\s+", " ", str(node)).strip()
+            if text:
+                tokens.append(("text", text))
+            return
 
-    print(f" — Fetched")
-    print(f"   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
-    print(f"   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
-    time.sleep(0.2)
-    return root
+        if not isinstance(node, Tag):
+            return
+
+        if node.name == "sub":
+            text = re.sub(r"\s+", "", node.get_text())
+            tokens.append(("sub", f"<sub>{text}</sub>"))
+            return
+
+        if node.name == "sup":
+            text = re.sub(r"\s+", "", node.get_text())
+            tokens.append(("sup", f"<sup>{text}</sup>"))
+            return
+
+        for child in node.children:
+            walk(child)
+
+    for child in soup.children:
+        walk(child)
+
+    result = []
+
+    prev_kind = None
+
+    for kind, value in tokens:
+
+        if not result:
+            result.append(value)
+            prev_kind = kind
+            continue
+
+        join = False
+
+        # B + <sub>10</sub>
+        if kind in {"sub", "sup"}:
+            join = True
+
+        # </sub>H
+        elif prev_kind in {"sub", "sup"} and ELEMENT_RE.match(value):
+            join = True
+
+        if join:
+            result.append(value)
+        else:
+            result.append(" ")
+            result.append(value)
+
+        prev_kind = kind
+
+    html = "".join(result)
+
+    html = re.sub(r"\s+", " ", html)
+    html = re.sub(r"\(\s+", "(", html)
+    html = re.sub(r"\s+\)", ")", html)
+
+    return html.strip()
 
 
-def fetch_papers_by_author(author_id: str, api_key="", inst_token="", max_results=500):
+def fetch_papers_by_author(
+    author_id: str,
+    api_key="",
+    inst_token="",
+    max_results=500,
+    crossref_title=False,
+):
     headers = {
         "X-ELS-APIKey": api_key,
         "Accept": "application/json",
@@ -186,11 +253,17 @@ def fetch_papers_by_author(author_id: str, api_key="", inst_token="", max_result
             break
 
     return {
-        "papers": process_scopus_response(all_entries),
+        "papers": process_scopus_response(all_entries, get_better_title=crossref_title),
     }
 
 
-def fetch_citing_articles(eid: str, api_key="", inst_token="", max_results=500):
+def fetch_citing_articles(
+    eid: str,
+    api_key="",
+    inst_token="",
+    max_results=500,
+    crossref_title=False,
+):
     headers = {"X-ELS-APIKey": api_key, "Accept": "application/json"}
     if inst_token:
         headers["X-ELS-Insttoken"] = inst_token
@@ -246,11 +319,11 @@ def fetch_citing_articles(eid: str, api_key="", inst_token="", max_results=500):
             break
 
     return {
-        "papers": process_scopus_response(all_entries),
+        "papers": process_scopus_response(all_entries, get_better_title=crossref_title),
     }
 
 
-def process_scopus_response(entries):
+def process_scopus_response(entries, get_better_title=False):
     FIELDS = [
         "eid",
         "dc:title",
@@ -264,12 +337,12 @@ def process_scopus_response(entries):
     ]
 
     data = []
+    cache = None
+    if get_better_title:
+        cache = load_cache()
 
     for entry in entries:
-        item = {
-            field: entry.get(field)
-            for field in FIELDS
-        }
+        item = {field: entry.get(field) for field in FIELDS}
 
         item["author"] = [
             {
@@ -279,6 +352,25 @@ def process_scopus_response(entries):
             }
             for author in entry.get("author", [])
         ]
+        
+        if not item["prism:doi"]:
+            print(f"  [Warn] Skip better title for {item['eid']}: No DOI included.")
+
+        elif get_better_title:
+            doi = item["prism:doi"]
+            title = item["dc:title"]
+            if doi in cache:
+                # print(f"  [Info] Fetching better title from cache for {doi}")
+                item["xml:title"] = clean_crossref_to_html(cache[doi])
+
+            else:
+                print(f"  [Info] Fetching better title from crossref for {doi}")
+                title = get_title_from_crossref(doi, "contact@watoc2028.org")
+                if title:
+                    item["xml:title"] = clean_crossref_to_html(title)
+                    cache[doi] = title
+                    save_cache(cache)
+                time.sleep(0.3)
 
         data.append(item)
 

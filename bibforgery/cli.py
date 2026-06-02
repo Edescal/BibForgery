@@ -63,6 +63,7 @@ def main():
     parser.add_argument("-o", "--output", metavar="JSON, TXT", default="", help="Nombre de archivo de salida")
     parser.add_argument("--parse", action="store_true", help="Parse JSON to Bibtex")
     parser.add_argument("--full", action="store_true", help="Parse JSON to Bibtex")
+    parser.add_argument("--crossref", action="store_true", help="Parse JSON to Bibtex")
     parser.add_argument(
         "-f",
         "--format",
@@ -81,7 +82,13 @@ def main():
     args = parser.parse_args()
 
     if args.fetch_cites:
-        base_data = fetch_citing_articles(args.fetch_cites, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
+        base_data = fetch_citing_articles(
+            args.fetch_cites,
+            ELSEVIER_API_KEY,
+            ELSEVIER_INST_TOKEN,
+            args.max_entries,
+            crossref_title=args.crossref,
+        )
 
         output_path_base = Path(f"output/{args.output}" if args.output else "output/result.txt")
         base_input_file = output_path_base.with_name(output_path_base.stem + "_raw.json")
@@ -93,7 +100,13 @@ def main():
         return
 
     if args.fetch:
-        base_data = fetch_papers_by_author(args.fetch, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN, args.max_entries)
+        base_data = fetch_papers_by_author(
+            args.fetch,
+            ELSEVIER_API_KEY,
+            ELSEVIER_INST_TOKEN,
+            args.max_entries,
+            crossref_title=args.crossref,
+        )
         base_input_file = resolve_name("output", f"{args.output}_response", "json")
         dump_json_to_file(base_data, base_input_file)
         print(f"Listo: {base_input_file}")
@@ -125,7 +138,12 @@ def main():
                 print(f"  [{global_index:>3}/{total}] {short_title}... (citado: {cited_count}) -> EID: {eid}")
 
                 if cited_count > 0 and eid:
-                    cites_data = fetch_citing_articles(eid, ELSEVIER_API_KEY, ELSEVIER_INST_TOKEN)
+                    cites_data = fetch_citing_articles(
+                        eid,
+                        ELSEVIER_API_KEY,
+                        ELSEVIER_INST_TOKEN,
+                        crossref_title=args.crossref,
+                    )
                     citedby_json_filename = resolve_name(
                         f"output/{args.output}", f"{args.output}_{eid}_citedby", "json"
                     )
@@ -168,17 +186,17 @@ def main():
         print("[Info] — Data created")
 
     elif args.format == "docx" or args.format == "word":
-        if args.style.lower() == 'acs':
-           style = 1 
+        if args.style.lower() == "acs":
+            style = 1
         else:
             style = 2
-            
+
         print(style)
         generate_docx(
             args.input,
             output=resolve_name("output", args.output, "docx"),
             include_citations=args.full,
-            citation_style=style
+            citation_style=style,
         )
     elif args.format == "pdf":
 

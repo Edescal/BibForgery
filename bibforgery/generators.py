@@ -46,16 +46,6 @@ def generate_txt(input: str) -> bytes:
 
 
 def generate_json(input, full=False) -> bytes:
-    """
-    Genera citas en formato JSON a partir
-    de un archivo en formato Bibtex y lo
-    guarda en un archivo
-
-    Args:
-        input (string): Archivo de entrada.
-        output (string): Archivo de salida.
-    """
-
     bibtext = parse_bibtex(input)
 
     buffer = io.BytesIO()
@@ -213,7 +203,7 @@ def add_citation_formatted(
     indent_cm = 0.8 if extra_indent else 0.0
 
     authors_raw = entry.get("author", [])
-    title = entry.get("dc:title", "")
+    title = entry.get("xml:title", entry.get('dc:title', ''))
     journal = entry.get("prism:publicationName", "")
     volume = entry.get("prism:volume", "")
     issue = entry.get("prism:issueIdentifier", "")
@@ -273,12 +263,12 @@ def add_citation_formatted(
         if pages:
             runs.append((f", {pages}", False, False, 11))
         if year:
-            runs.append((f" ({year})", False, False, 11))
+            runs.append((f" ({year}).", False, False, 11))
 
     para = add_hanging_paragraph(doc, number_text, runs, indent_cm=indent_cm)
 
     if doi:
-        r_prefix = para.add_run(". DOI: ")
+        r_prefix = para.add_run(" DOI: ")
         r_prefix.font.name = "Arial"
         r_prefix.font.size = Pt(10)
 
