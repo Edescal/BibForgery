@@ -85,7 +85,7 @@ def generate_txt(input: str) -> bytes:
     for chunk in process_entries_as_text(bibtext.entries):
         buffer.write(chunk.encode("utf-8"))
     buffer.seek(0)
-    return buffer
+    return buffer.getvalue()
 
 
 def generate_json(input, full=False) -> bytes:

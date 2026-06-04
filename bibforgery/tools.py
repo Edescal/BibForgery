@@ -1,6 +1,9 @@
 from bs4 import BeautifulSoup, NavigableString, Tag
 from pathlib import Path
 import requests, time, re, json
+from colorama import Fore, Style, init
+
+init()
 
 CACHE_FILE = Path("crossref_cache.json")
 
@@ -157,8 +160,12 @@ def fetch_papers_by_author(
         all_entries.extend(entries)
         total = int(data["search-results"]["opensearch:totalResults"])
         print(f" — Downloaded: {len(all_entries)}/{total}")
-        print(f"   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
-        print(f"   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
+        print(
+            f"{Style.DIM}   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')} {Style.RESET_ALL}"
+        )
+        print(
+            f"{Style.DIM}   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')} {Style.RESET_ALL}"
+        )
         time.sleep(0.2)
 
         next_limit = start + count
@@ -190,7 +197,7 @@ def fetch_citing_articles(
     count = 25
 
     while True:
-        print(f"  Fetching {eid}", end="")
+        print(f"  Fetching citing papers for {eid}", end="")
         params = {
             "query": f"ref({eid})",
             "start": start,
@@ -228,8 +235,8 @@ def fetch_citing_articles(
         start += count
 
         print(f" — Downloaded: {len(all_entries)}/{total}")
-        print(f"   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')}")
-        print(f"   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')}")
+        print(f"{Style.DIM}   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')} {Style.RESET_ALL}")
+        print(f"{Style.DIM}   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')} {Style.RESET_ALL}")
         time.sleep(0.2)
 
         if start >= total or start >= max_results:

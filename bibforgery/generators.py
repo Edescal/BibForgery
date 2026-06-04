@@ -8,7 +8,11 @@ from docx.shared import Pt, Inches, Cm
 from docx.oxml.ns import qn
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from bs4 import BeautifulSoup, NavigableString, Tag
-import json
+from io import BytesIO
+import json, os
+from jinja2 import Template
+from datetime import datetime
+from collections import defaultdict
 
 
 class CitationStyle(Enum):
@@ -17,7 +21,7 @@ class CitationStyle(Enum):
 
 
 def generate_full_json(input: str, include_citations=False):
-    filepath = Path(f"output/{input}_response.json").resolve()
+    filepath = Path(f"output/{input}_papers.json").resolve()
     raw_data = get_data_from_file(filepath)
     source_data = json.loads(raw_data)
 
@@ -212,7 +216,6 @@ def add_citation_formatted(
     extra_indent=False,
     citation_style: CitationStyle = CitationStyle.ACS,
 ):
-    citation_style = CitationStyle(citation_style)
     indent_cm = 0.8 if extra_indent else 0.0
 
     authors_raw = entry.get("author", [])
@@ -230,7 +233,8 @@ def add_citation_formatted(
 
     # construir runs: (text, bold, italic, pt)
     runs = []
-    if citation_style == CitationStyle.ACS:
+    FONT_SIZE = 11
+    if CitationStyle(citation_style) == CitationStyle.ACS:
         for i, author in enumerate(authors_raw):
             if i == len(authors_raw) - 1:
                 authors += f"{author.get('surname')} {author.get('initials')}"
@@ -239,7 +243,6 @@ def add_citation_formatted(
             if not i == len(authors_raw) - 1:
                 authors += "; "
 
-        FONT_SIZE = 11
         if authors:
             runs.append((authors + " ", False, False, FONT_SIZE, False))
         if title:
@@ -255,13 +258,16 @@ def add_citation_formatted(
         if pages:
             runs.append((f"{pages}.", False, False, FONT_SIZE, False))
 
-    elif citation_style == CitationStyle.APS:
+    elif CitationStyle(citation_style) == CitationStyle.APS:
         for i, author in enumerate(authors_raw):
             if i == len(authors_raw) - 1:
                 authors += f"and {author.get('initials')} {author.get('surname')}."
                 continue
+
             authors += f"{author.get('initials')} {author.get('surname')}"
-            if not i == len(authors_raw) - 1:
+            if len(authors_raw) > 1 and i == len(authors_raw) - 2:
+                authors += " "
+            elif not i == len(authors_raw) - 1:
                 authors += ", "
 
         if authors:
@@ -289,8 +295,8 @@ def add_citation_formatted(
         add_hyperlink(para, doi, f"https://doi.org/{doi}")
 
 
-def generate_docx(input, output, include_citations=False, citation_style=CitationStyle.ACS) -> None:
-    filepath = Path(f"output/{input}_response.json").resolve()
+def generate_docx(name, include_citations=False, citation_style=CitationStyle.ACS) -> None:
+    filepath = Path(f"output/{name}_papers.json").resolve()
     raw_data = get_data_from_file(filepath)
     data = json.loads(raw_data)
 
@@ -331,8 +337,6 @@ def generate_docx(input, output, include_citations=False, citation_style=Citatio
     r.font.size = Pt(12)
     r.font.name = "Arial"
 
-    print(citation_style)
-
     for i, entry in enumerate(sorted_entries):
         global_index = total - i
         cited_count = int(entry.get("citedby-count", 0))
@@ -342,8 +346,8 @@ def generate_docx(input, output, include_citations=False, citation_style=Citatio
 
         add_citation_formatted(doc, entry, global_index, abbreviated=True, citation_style=citation_style)
 
-        if cited_count > 0 and eid and input and include_citations:
-            eid_input = Path(f"output/{input}/{input}_{eid}_citedby.json").resolve()
+        if cited_count > 0 and eid and name and include_citations:
+            eid_input = Path(f"output/{name}/{name}_{eid}_citedby.json").resolve()
             if not eid_input.is_file():
                 print(f"[Warn] File {eid_input} not found!")
                 continue
@@ -378,7 +382,175 @@ def generate_docx(input, output, include_citations=False, citation_style=Citatio
         # sep.paragraph_format.space_before = Pt(0)
         # sep.paragraph_format.space_after = Pt(0)
 
-    output_path = Path(output).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
-    print(f"\n[Info] — DOCX creado: {output_path} ({total} artículos)")
+    buffer = BytesIO()
+    doc.save(buffer)
+
+    return buffer.getvalue()
+
+
+def generate_pdf(name, include_citations=False, citation_style=CitationStyle.ACS) -> bytes | None:
+    from weasyprint import HTML, CSS
+
+    filepath = Path(f"output/{name}_papers.json").resolve()
+    raw_data = get_data_from_file(filepath)
+    data = json.loads(raw_data)
+
+    entries = data.get("papers", [])
+
+    def get_year(e):
+        d = e.get("prism:coverDate", "0000")
+        try:
+            return int(d[:4])
+        except (ValueError, TypeError):
+            return 0
+
+    sorted_entries = sorted(entries, key=get_year, reverse=True)
+    total = len(sorted_entries)
+
+    # ————
+    grouped = defaultdict(list)
+    for i, entry in enumerate(sorted_entries):
+        global_index = total - i
+
+        year = (entry.get("prism:coverDate", "") or "")[:4] or "Sin Año"
+
+        citation_html = process_single_entry_as_html(entry, global_index, citation_style)
+        grouped[year].append(citation_html)
+
+        cited_count = int(entry.get("citedby-count", 0))
+        eid = entry.get("eid", "")
+
+        if not include_citations or cited_count <= 0 or not eid:
+            continue
+
+        eid_input = Path(f"output/{name}/{name}_{eid}_citedby.json").resolve()
+
+        if not eid_input.is_file():
+            print(f"[Warn] File {eid_input} not found!")
+            continue
+
+        try:
+            cites_data = json.loads(get_data_from_file(eid_input))
+        except json.JSONDecodeError:
+            continue
+
+        cites = cites_data.get("papers", [])
+
+        grouped[year].append(f"""
+            <div style="margin-left:30px;
+                        margin-top:4px;
+                        margin-bottom:4px;
+                        font-weight:bold;">
+                Cited by ({len(cites)}):
+            </div>
+            """)
+
+        for j, cite_entry in enumerate(cites, start=1):
+            grouped[year].append(process_single_entry_as_html(cite_entry, j, citation_style, extra_indent=True))
+
+    sorted_years = sorted(grouped.keys(), reverse=True)
+    grouped_data = [(y, grouped[y]) for y in sorted_years]
+    # ————
+
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    templates_path = os.path.join(base_path, "templates/")
+    html_path = os.path.join(base_path, "templates", "index.html")
+    css_path = os.path.join(base_path, "templates", "styles.css")
+
+    with open(html_path, "r", encoding="utf-8") as html:
+        plantilla_html = html.read()
+
+    context = {
+        "grouped_data": grouped_data,
+        "date": datetime.now().strftime("%B %d, %Y"),
+    }
+    render = Template(plantilla_html).render(data=context)
+    styles = CSS(filename=css_path)
+    pdf_as_bytes = HTML(
+        string=render,
+        base_url=templates_path,
+    ).write_pdf(stylesheets=[styles])
+
+    return pdf_as_bytes
+
+
+def process_single_entry_as_html(data, index: int, citation_style=CitationStyle.ACS, extra_indent=False):
+    res = ""
+    authors = ""
+    authors_raw = data.get("author", [])
+
+    title = data.get("xml:title", data.get("dc:title", ""))
+    journal = jabbreviation2(data.get("prism:publicationName", ""))
+    volume = data.get("prism:volume", "")
+    issue = data.get("prism:issueIdentifier", "")
+    pages = data.get("prism:pageRange", "") or data.get("page-range", "")
+    year = (data.get("prism:coverDate", "") or "")[:4]
+    doi = data.get("prism:doi", "")
+
+    if CitationStyle(citation_style) == CitationStyle.ACS:
+        for i, author in enumerate(authors_raw):
+            if i == len(authors_raw) - 1:
+                authors += f"{author.get('surname')} {author.get('initials')}"
+                continue
+            authors += f"{author.get('surname')} {author.get('initials')}"
+            if not i == len(authors_raw) - 1:
+                authors += "; "
+
+        res = f'{authors} {title}. <span style="font-style: italic;">{journal}</span>'
+        if year:
+            res += f' <span style="font-weight: bold;">{year}</span>'
+        if volume or issue or pages:
+            res += ","
+            if volume:
+                res += f' <span style="font-style: italic;">{volume}</span>'
+            if issue:
+                res += f"({issue})"
+            if pages:
+                res += f", {pages}."
+
+    elif CitationStyle(citation_style) == CitationStyle.APS:
+        for i, author in enumerate(authors_raw):
+            if i == len(authors_raw) - 1:
+                authors += f"and {author.get('initials')} {author.get('surname')}."
+                continue
+            authors += f"{author.get('initials')} {author.get('surname')}"
+            if not i == len(authors_raw) - 1:
+                authors += ", "
+
+        res = f'{authors} {title}. <span style="font-style: italic;">{journal}</span>'
+        if volume or issue or pages:
+            res += ","
+            if volume:
+                res += f' <span style="font-weight: bold;">{volume}</span>'
+            if issue:
+                res += f"({issue})"
+            if pages:
+                res += f", {pages},"
+        if year:
+            res += f" {year}."
+
+    if doi:
+        res += f' DOI: <a href="https://doi.org/{doi}" target="_blank" rel="noopener noreferrer" style="color: #0563C1; text-decoration: underline;">https://doi.org/{doi}</a>'
+
+    # return f"""
+    # <div style="display: flex; margin-bottom: 8px;">
+    #     <div style="min-width: 30px; font-weight: bold;">{index}.</div>
+    #     <div style="flex: 1;">{res}</div>
+    # </div>
+    # """
+
+    margin = "40px" if extra_indent else "0px"
+    return f"""
+    <div style="
+        display:flex;
+        margin-bottom:8px;
+        margin-left:{margin};
+    ">
+        <div style="min-width:30px;font-weight:bold;">
+            {index}.
+        </div>
+        <div style="flex:1;">
+            {res}
+        </div>
+    </div>
+    """

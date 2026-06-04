@@ -94,7 +94,7 @@ header#cabecera div span {
 
 
 body {
-    font-family: Georgia, serif;
+    font-family: Arial, Helvetica, sans-serif;
     font-size: 10pt;
     line-height: 1.5;
     color: #1a1a1a;
@@ -147,4 +147,10 @@ li {
     font-size: 11pt;
     text-align: justify;
     line-height: 1.2;
+}
+
+sub,
+sup {
+    font-size: 70%;
+    line-height: 0;
 }
