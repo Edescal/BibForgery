@@ -1,23 +1,14 @@
-from .parser import (
-    parse_bibtex,
-    process_entries_as_json,
-    process_entries_as_text,
-    get_grouped_entries,
-)
 from .tools import get_data_from_file
 from .libjabbrev2 import jabbreviation2
-from enum import Enum
-
-from jinja2 import Template
-from datetime import datetime
 from pathlib import Path
+from enum import Enum
 from docx import Document
-from docx.shared import Pt, Inches, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-
 from docx.oxml import OxmlElement
+from docx.shared import Pt, Inches, Cm
 from docx.oxml.ns import qn
-import os, io, json
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from bs4 import BeautifulSoup, NavigableString, Tag
+import json
 
 
 class CitationStyle(Enum):
@@ -25,54 +16,14 @@ class CitationStyle(Enum):
     APS = 2
 
 
-def generate_txt(input: str) -> bytes:
-    """
-    Genera citas en texto plano a partir
-    de un archivo en formato Bibtex y lo
-    guarda en un archivo
-
-    Args:
-        input (string): Archivo de entrada.
-        output (string): Archivo de salida.
-    """
-
-    bibtext = parse_bibtex(input)
-
-    buffer = io.BytesIO()
-    for chunk in process_entries_as_text(bibtext.entries):
-        buffer.write(chunk.encode("utf-8"))
-    buffer.seek(0)
-    return buffer
-
-
-def generate_json(input, full=False) -> bytes:
-    bibtext = parse_bibtex(input)
-
-    buffer = io.BytesIO()
-    buffer.write(b"[")
-    yielder = process_entries_as_json(bibtext.entries, full)
-    try:
-        first = next(yielder)
-        buffer.write(json.dumps(first, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-        for item in yielder:
-            buffer.write(b",")
-            buffer.write(json.dumps(item, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-    except StopIteration:
-        pass
-    buffer.write(b"]")
-    buffer.seek(0)
-    return buffer
-
-
 def generate_full_json(input: str, include_citations=False):
     filepath = Path(f"output/{input}_response.json").resolve()
     raw_data = get_data_from_file(filepath)
     source_data = json.loads(raw_data)
 
-    
     def process_entry(entry):
         eid = entry.get("eid", "")
-        
+
         fulldate = entry.get("prism:coverDate", "0000-00-00")
         year = int(fulldate[:4]) if len(fulldate) >= 4 else 0
         month = int(fulldate[5:7]) if len(fulldate) >= 7 else 0
@@ -80,7 +31,7 @@ def generate_full_json(input: str, include_citations=False):
 
         journal = entry.get("prism:publicationName", "")
         journal_abbr = jabbreviation2(journal)
-        
+
         citedby_count = int(entry.get("citedby-count", 0))
         item = {
             "id": eid,
@@ -98,13 +49,13 @@ def generate_full_json(input: str, include_citations=False):
             "citedby-count": citedby_count,
         }
         return item
-    
+
     papers = []
     for entry in source_data.get("papers", []):
         item = process_entry(entry)
-        eid = item['id']
-        citedby_count = item['citedby-count']
-        
+        eid = item["id"]
+        citedby_count = item["citedby-count"]
+
         if citedby_count > 0 and eid and input and include_citations:
             eid_input = Path(f"output/{input}/{input}_{eid}_citedby.json").resolve()
             if not eid_input.is_file():
@@ -121,61 +72,17 @@ def generate_full_json(input: str, include_citations=False):
                 continue
 
             cites = cites_data.get("papers", [])
-            
+
             citations = []
             for entry_c in cites:
                 item_c = process_entry(entry_c)
                 citations.append(item_c)
-                
-            item['citedby-papers'] = citations
-            
+
+            item["citedby-papers"] = citations
+
         papers.append(item)
 
     return papers
-
-
-def generate_pdf(input) -> bytes | None:
-    """
-    Generador de archivo PDF a partir
-    de un archivo en formato Bibtex.
-
-    Args:
-        input (string): Archivo de entrada.
-        output (string): Archivo de salida.
-    """
-
-    from weasyprint import HTML, CSS
-
-    bibtext = parse_bibtex(input)
-
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    templates_path = os.path.join(base_path, "templates/")
-    html_path = os.path.join(base_path, "templates", "index.html")
-    css_path = os.path.join(base_path, "templates", "styles.css")
-
-    with open(html_path, "r", encoding="utf-8") as html:
-        plantilla_html = html.read()
-
-    context = {
-        "grouped_data": get_grouped_entries(bibtext.entries),
-        "date": datetime.now().strftime("%B %d, %Y"),
-    }
-    render = Template(plantilla_html).render(data=context)
-    styles = CSS(filename=css_path)
-    pdf_as_bytes = HTML(
-        string=render,
-        base_url=templates_path,
-    ).write_pdf(stylesheets=[styles])
-
-    return pdf_as_bytes
-
-
-from docx import Document
-from docx.shared import Pt, Inches, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
-from bs4 import BeautifulSoup, NavigableString, Tag
 
 
 def add_html_run(paragraph, html, bold=False, italic=False, size=11):

@@ -1,6 +1,5 @@
 from bs4 import BeautifulSoup, NavigableString, Tag
 from pathlib import Path
-from .libjabbrev2 import jabbreviation2
 import requests, time, re, json
 
 CACHE_FILE = Path("crossref_cache.json")
@@ -18,20 +17,6 @@ def save_cache(cache):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
-"""Deprecar??"""
-def clean_crossref_title(title: str) -> str:
-    if not title:
-        return ""
-    title = re.sub(r"\s*\n\s*", " ", title)
-    title = re.sub(r">\s+<", "><", title)
-    title = re.sub(r"\s*(</?(?:sub|sup|i|b)>)\s*", r"\1", title)
-    title = re.sub(r"\s{2,}", " ", title)
-    title = re.sub(r"(</(?:sub|sup|i|b)>)\s*([A-Za-z])", r"\1 \2", title)
-    title = re.sub(r"(\d)([A-Za-z])", r"\1 \2", title)
-
-    return title.strip()
-
-
 def get_data_from_file(input) -> str:
     input_path = Path(input).resolve()
     if not input_path.exists() or not input_path.is_file():
@@ -40,74 +25,6 @@ def get_data_from_file(input) -> str:
     with open(input_path, "r", encoding="utf-8") as file:
         data = file.read()
     return data
-
-
-def data_to_bibtex(data, check_title=False) -> str:
-    entries = data.get("papers", [])
-    full_bib = ""
-
-    for entry in entries:
-        title = entry.get("dc:title", "")
-        alt_title = title
-        authors = entry.get("author", [])
-        author_list = [f"{a.get('surname','')}, {a.get('given-name','')}".strip(", ") for a in authors]
-        authors_str = " and ".join(author_list) if author_list else "A. Unknown"
-
-        journal = entry.get("prism:publicationName", "")
-        date = entry.get("prism:coverDate", "0000-00-00")
-        year = date[:4]
-        month = date[5:7] if len(date) >= 7 else ""
-        day = date[8:10] if len(date) >= 10 else ""
-        volume = entry.get("prism:volume", "")
-        issue = entry.get("prism:issueIdentifier", "")
-        pages = entry.get("prism:pageRange", "")
-        eid = entry.get("eid", "")
-        citedby_count = int(entry.get("citedby-count", "0"))
-        doi = entry.get("prism:doi", "")
-        if doi and check_title:
-            crossref_data = get_title_from_crossref(doi, "contact@watoc2028.org")
-            if crossref_data:
-                alt_title = crossref_data.get("message", {}).get("title", [""])[0]
-                alt_title = clean_crossref_title(alt_title)
-                time.sleep(0.3)
-
-        # Key
-        if eid:
-            cite_key = eid
-        elif doi:
-            cite_key = doi.replace("/", "_").replace(".", "_")
-        else:
-            main_auth = entry.get("dc:creator", "paper").split(",")[0]
-            cite_key = f"{main_auth}_{year}"
-
-        # BibTeX
-        bib = f"@ARTICLE{{{cite_key},\n"
-        bib += f"  author = {{{authors_str}}},\n"
-        bib += f"  title = {{{alt_title if len(alt_title) > (len(title)) else title}}},\n"
-        bib += f"  journal = {{{journal}}},\n"
-        bib += f"  journal_abbrev = {{{jabbreviation2(journal)}}},\n"
-        bib += f"  year = {{{year}}},\n"
-        if month:
-            bib += f"  month = {{{month}}},\n"
-        if day:
-            bib += f"  day = {{{day}}},\n"
-        if volume:
-            bib += f"  volume = {{{volume}}},\n"
-        if issue:
-            bib += f"  number = {{{issue}}},\n"
-        if pages:
-            bib += f"  pages = {{{pages}}},\n"
-        if doi:
-            bib += f"  doi = {{{doi}}},\n"
-        if citedby_count:
-            bib += f"  citedby_count = {{{citedby_count}}},\n"
-        if eid:
-            bib += f"  url = {{https://www.scopus.com/inward/record.uri?eid={eid}}},\n"
-        bib += f"  type = {{{entry.get('subtypeDescription', 'Article')}}}\n"
-        bib += "}\n\n"
-
-        full_bib += bib
-    return full_bib
 
 
 def get_title_from_crossref(doi: str, mailto: str):
@@ -352,7 +269,7 @@ def process_scopus_response(entries, get_better_title=False):
             }
             for author in entry.get("author", [])
         ]
-        
+
         if not item["prism:doi"]:
             print(f"  [Warn] Skip better title for {item['eid']}: No DOI included.")
 

@@ -176,6 +176,8 @@ pyrightconfig.json
 *.pdf
 *.json
 *.bib
+*.sqlite
+*.db
 output
 
 ignore/

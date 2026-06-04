@@ -1,20 +1,12 @@
 #!/usr/bin/python3 -u
 
+# $ bibforgery --fetch 57223337398 --full -o alan_quintal --crossref
+
 from dotenv import load_dotenv
 from pathlib import Path
-from .tools import (
-    fetch_papers_by_author,
-    fetch_citing_articles,
-    data_to_bibtex,
-    get_data_from_file,
-)
-from .generators import (
-    generate_json,
-    generate_full_json,
-    generate_pdf,
-    generate_txt,
-    generate_docx,
-)
+from .tools import fetch_papers_by_author, fetch_citing_articles, get_data_from_file
+from .bibtex import dict_to_bibtex, generate_txt, generate_pdf
+from .generators import generate_full_json, generate_docx
 import argparse, os, json
 
 
@@ -23,13 +15,6 @@ def dump_json_to_file(data, output="output.json") -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-def dump_data_to_bib_file(data: str, output_file="output.bib") -> None:
-    output_path = Path(output_file).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(data)
 
 
 def resolve_name(prefix, name, extension):
@@ -48,12 +33,6 @@ def main():
     )
     parser.add_argument("--fetch", metavar="AUTHOR ID", default="", help="Fetch Scopus API with AUTHOR_ID")
     parser.add_argument(
-        "--fetch-cites",
-        metavar="EID",
-        default="",
-        help="Scopus EID unique academic work identifier assigned in Scopus bibliographic database",
-    )
-    parser.add_argument(
         "--max-entries",
         metavar="",
         type=int,
@@ -68,8 +47,8 @@ def main():
     parser.add_argument(
         "-f",
         "--format",
-        metavar="{text,json,pdf}",
-        choices=["text", "json", "pdf", "docx", "word"],
+        metavar="{text,json,pdf,bib}",
+        choices=["text", "json", "pdf", "docx", "word", "bib"],
         default="",
         help="Formato de salida",
     )
@@ -82,24 +61,6 @@ def main():
 
     args = parser.parse_args()
 
-    if args.fetch_cites:
-        base_data = fetch_citing_articles(
-            args.fetch_cites,
-            ELSEVIER_API_KEY,
-            ELSEVIER_INST_TOKEN,
-            args.max_entries,
-            crossref_title=args.crossref,
-        )
-
-        output_path_base = Path(f"output/{args.output}" if args.output else "output/result.txt")
-        base_input_file = output_path_base.with_name(output_path_base.stem + "_raw.json")
-        dump_json_to_file(base_data, base_input_file)
-
-        # bib_data = data_to_bibtex(base_data)
-        # bib_output_file = output_path_base.with_name(output_path_base.stem + ".bib")
-        # dump_data_to_bib_file(bib_data, bib_output_file)
-        return
-
     if args.fetch:
         base_data = fetch_papers_by_author(
             args.fetch,
@@ -111,11 +72,6 @@ def main():
         base_input_file = resolve_name("output", f"{args.output}_response", "json")
         dump_json_to_file(base_data, base_input_file)
         print(f"Listo: {base_input_file}")
-
-        # bib_data = data_to_bibtex(base_data)
-        # bib_output_file = resolve_name('output', f'{args.output}', 'bib')
-        # dump_data_to_bib_file(bib_data, bib_output_file)
-        # print(f"Listo: {bib_output_file}\n")
 
         if args.full:
             print("\nArtículos citados:")
@@ -150,72 +106,53 @@ def main():
                     )
                     dump_json_to_file(cites_data, citedby_json_filename)
                     print(f"   Listo: {citedby_json_filename}\n")
-
-                    # citedby_bibtex_str = data_to_bibtex(base_data)
-                    # citedby_bib_filename = resolve_name(F'output/{args.output}', f'{args.output}_{eid}_citedby', 'bib')
-                    # dump_data_to_bib_file(citedby_bibtex_str, citedby_bib_filename)
-                    # print(f"   Listo: {citedby_bib_filename}\n")
         return
 
     if not args.parse or not args.format:
         parser.error("Debes especificar el tipo de uso: --fetch ó --parse")
 
-    if args.format == "json":
-        # base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
-        # o_f_ext = base_input_file.with_name(base_input_file.stem + ".json")
-        # base_data = get_data_from_file(args.input)
-        # json_as_bytes = generate_json(base_data)
+    if args.format == "bib":
+        input_file = resolve_name("output", f"{args.input}_response", "json")
+        raw_data = get_data_from_file(input_file)
+        json_data = json.loads(raw_data)
+        bibtex_data = dict_to_bibtex(json_data)
 
-        # base_input_file = Path(o_f_ext).resolve()
-        # base_input_file.parent.mkdir(parents=True, exist_ok=True)
-        # with open(base_input_file, "wb") as f:
-        #     f.write(json_as_bytes.getvalue())
+        output_file = resolve_name("output", f"{args.input}", "bib")
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(bibtex_data)
 
+        print("[Info] — BibTex created")
+
+    elif args.format == "json":
         json_data = generate_full_json(args.input, include_citations=args.full)
-
         output_path = resolve_name("output", args.output, "json")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(json_data, f, ensure_ascii=False, indent=2)
-
         print("[Info] — JSON created")
 
     elif args.format == "text":
-        base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
-        o_f_ext = base_input_file.with_name(base_input_file.stem + ".txt")
-        base_data = get_data_from_file(args.input)
-        text_as_bytes = generate_txt(base_data)
-
-        base_input_file = Path(o_f_ext).resolve()
-        base_input_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(base_input_file, "wb") as file:
+        input_file = resolve_name("output", f"{args.input}", "bib")
+        raw_data = get_data_from_file(input_file)
+        text_as_bytes = generate_txt(raw_data)
+        output_file = resolve_name("output", f"{args.output or 'text'}", "txt")
+        with open(output_file, "wb") as file:
             file.write(text_as_bytes.getvalue())
+        print("[Info] — Text file created")
 
-        print("[Info] — Data created")
+    elif args.format == "pdf":
+        input_file = resolve_name("output", f"{args.input}", "bib")
+        raw_data = get_data_from_file(input_file)
+        pdf_as_bytes = generate_pdf(raw_data)
+        output_file = resolve_name("output", f"{args.output or 'cites'}", "pdf")
+        with open(output_file, "wb") as f:
+            f.write(pdf_as_bytes)
+        print("[Info] — PDF created")
 
     elif args.format == "docx" or args.format == "word":
-        if args.style.lower() == "acs":
-            style = 1
-        else:
-            style = 2
-
-        print(style)
         generate_docx(
             args.input,
             output=resolve_name("output", args.output, "docx"),
             include_citations=args.full,
-            citation_style=style,
+            citation_style=1 if args.style.lower() == "acs" else 2,
         )
-    elif args.format == "pdf":
-
-        base_input_file = Path(f"output/{args.output}" if args.output else "output/parse_result")
-        o_f_ext = base_input_file.with_name(base_input_file.stem + ".pdf")
-        base_data = get_data_from_file(args.input)
-        pdf_as_bytes = generate_pdf(base_data)
-
-        base_input_file = Path(o_f_ext).resolve()
-        base_input_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(base_input_file, "wb") as f:
-            f.write(pdf_as_bytes)
-
-        print("[Info] — PDF created")
