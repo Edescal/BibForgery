@@ -415,7 +415,7 @@ def process_scopus_response(entries, get_better_title=False):
         ]
 
         if not item["prism:doi"]:
-            print(f"  [Warn] Skip better title for {item['eid']}: No DOI included.")
+            print(f"  [Warn] No DOI included for {item['eid']}")
 
         elif get_better_title:
             doi = item["prism:doi"]

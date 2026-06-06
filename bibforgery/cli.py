@@ -42,7 +42,7 @@ def dump_json_to_file(filepath: str, data, silent=False) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        json.dump(data, f, ensure_ascii=False)
 
     if not silent:
         print(f"{Fore.GREEN}[Info] — Archivo json creado: {path}{Style.RESET_ALL}")
