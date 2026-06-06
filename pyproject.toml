@@ -4,6 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["bibforgery*"]
+exclude = ["venv*", ".venv*", "build*", "dist*"]
 
 [tool.setuptools.package-data]
 "bibforgery" = [
@@ -18,7 +20,7 @@ bibforgery = "bibforgery.cli:main"
 
 [project]
 name = "bibforgery"
-version = "0.1.21"
+version = "1.10.0"
 description = "Cliente para obtener y procesar datos de Scopus"
 authors = [
     { name="Eduardo Escalante" }
