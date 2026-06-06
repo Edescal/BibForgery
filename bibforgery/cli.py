@@ -10,7 +10,7 @@ from .tools import (
     get_cache_info,
     clean_crossref_to_html,
 )
-# from .fix_elsevier_cache import fix_elsevier_doi_in_cache
+from .fix_elsevier_cache import fix_elsevier_doi_in_cache
 from .generators import generate_full_json, generate_docx, generate_pdf
 from .bibtex import dict_to_bibtex, generate_txt
 import argparse, os, json
@@ -222,13 +222,13 @@ def handle_cache_info(args):
 def handle_cache_fix(args):
     ELSEVIER_API_KEY = os.getenv("ELSEVIER_API_KEY")
     ELSEVIER_INST_TOKEN = os.getenv("ELSEVIER_INSTTOKEN")
-    # fix_elsevier_doi_in_cache(
-    #     api_key=ELSEVIER_API_KEY,
-    #     inst_token=ELSEVIER_INST_TOKEN,
-    #     limit=args.limit,
-    #     sleep_seconds=0.3,
-    #     dry_run=args.dry_run,
-    # )
+    fix_elsevier_doi_in_cache(
+        api_key=ELSEVIER_API_KEY,
+        inst_token=ELSEVIER_INST_TOKEN,
+        limit=args.limit,
+        sleep_seconds=0.3,
+        dry_run=args.dry_run,
+    )
 
 
 def main():
