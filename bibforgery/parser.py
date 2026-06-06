@@ -2,10 +2,6 @@ from bibtexparser.library import Library
 from bibtexparser.model import Field, Entry
 from collections.abc import MutableSequence
 from collections import defaultdict
-from pathlib import Path
-from .tools import get_data_from_file
-from .libjabbrev2 import jabbreviation2
-import bibtexparser, json
 
 
 def parse_bibtex(input) -> Library:

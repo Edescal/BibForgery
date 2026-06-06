@@ -13,7 +13,9 @@ import json, os
 from jinja2 import Template
 from datetime import datetime
 from collections import defaultdict
+from colorama import Style, Fore, init
 
+init()
 
 class CitationStyle(Enum):
     ACS = 1
@@ -86,7 +88,7 @@ def generate_full_json(input: str, include_citations=False):
 
         papers.append(item)
 
-    return papers
+    return {"papers": papers}
 
 
 def add_html_run(paragraph, html, bold=False, italic=False, size=11):
@@ -297,6 +299,10 @@ def add_citation_formatted(
 
 def generate_docx(name, include_citations=False, citation_style=CitationStyle.ACS) -> None:
     filepath = Path(f"output/{name}_papers.json").resolve()
+    if not filepath.is_file():
+        print(f"{Style.DIM}{Fore.YELLOW}  [Warn] {filepath} not found{Style.RESET_ALL}")
+        return None
+        
     raw_data = get_data_from_file(filepath)
     data = json.loads(raw_data)
 
@@ -313,6 +319,11 @@ def generate_docx(name, include_citations=False, citation_style=CitationStyle.AC
     total = len(sorted_entries)
 
     doc = Document()
+    
+    section = doc.sections[0]
+    p = section.header.paragraphs[0]
+    p.text = 'TheoChemMerida, 2026.'
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
     # estilos base
     style = doc.styles["Normal"]
@@ -341,8 +352,8 @@ def generate_docx(name, include_citations=False, citation_style=CitationStyle.AC
         global_index = total - i
         cited_count = int(entry.get("citedby-count", 0))
         eid = entry.get("eid", "")
-        short_title = entry.get("dc:title", "")[:55]
-        print(f" [{global_index:>3}/{total}] {short_title}... (cited by {cited_count} papers)")
+        short_title = entry.get("dc:title", "")[:45]
+        print(f"{Style.DIM} [{global_index:>3}/{total}] {short_title:<47.47} Cited by {cited_count}{Style.RESET_ALL}")
 
         add_citation_formatted(doc, entry, global_index, abbreviated=True, citation_style=citation_style)
 
@@ -378,9 +389,9 @@ def generate_docx(name, include_citations=False, citation_style=CitationStyle.AC
                 )
 
         # separador visual entre entradas principales
-        # sep = doc.add_paragraph()
-        # sep.paragraph_format.space_before = Pt(0)
-        # sep.paragraph_format.space_after = Pt(0)
+        sep = doc.add_paragraph()
+        sep.paragraph_format.space_before = Pt(0)
+        sep.paragraph_format.space_after = Pt(0)
 
     buffer = BytesIO()
     doc.save(buffer)
@@ -392,6 +403,10 @@ def generate_pdf(name, include_citations=False, citation_style=CitationStyle.ACS
     from weasyprint import HTML, CSS
 
     filepath = Path(f"output/{name}_papers.json").resolve()
+    if not filepath.is_file():
+        print(f"{Style.DIM}{Fore.YELLOW}  [Warn] {filepath} not found{Style.RESET_ALL}")
+        return None
+    
     raw_data = get_data_from_file(filepath)
     data = json.loads(raw_data)
 
@@ -531,13 +546,6 @@ def process_single_entry_as_html(data, index: int, citation_style=CitationStyle.
 
     if doi:
         res += f' DOI: <a href="https://doi.org/{doi}" target="_blank" rel="noopener noreferrer" style="color: #0563C1; text-decoration: underline;">https://doi.org/{doi}</a>'
-
-    # return f"""
-    # <div style="display: flex; margin-bottom: 8px;">
-    #     <div style="min-width: 30px; font-weight: bold;">{index}.</div>
-    #     <div style="flex: 1;">{res}</div>
-    # </div>
-    # """
 
     margin = "40px" if extra_indent else "0px"
     return f"""

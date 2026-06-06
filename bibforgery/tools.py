@@ -1,12 +1,15 @@
 from bs4 import BeautifulSoup, NavigableString, Tag
 from pathlib import Path
 import requests, time, re, json
-from colorama import Fore, Style, init
+from datetime import datetime
+from platformdirs import user_cache_dir
+from colorama import Style, init, Fore
 
 init()
 
-CACHE_FILE = Path("crossref_cache.json")
-
+CACHE_DIR = Path(user_cache_dir("bibforgery"))
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_FILE = CACHE_DIR / "crossref_cache.json"
 
 def load_cache():
     if CACHE_FILE.exists():
@@ -19,6 +22,51 @@ def save_cache(cache):
     with open(CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
+
+def get_cache_info() -> dict:
+    info = {
+        "cache_dir": str(CACHE_DIR.resolve()),
+        "cache_file": str(CACHE_FILE.resolve()),
+        "cache_dir_exists": CACHE_DIR.exists(),
+        "cache_file_exists": CACHE_FILE.exists(),
+    }
+
+    if not CACHE_FILE.exists():
+        info.update({
+            "entries": 0,
+            "size_bytes": 0,
+            "last_modified": None,
+        })
+        return info
+
+    stat = CACHE_FILE.stat()
+
+    try:
+        with CACHE_FILE.open("r", encoding="utf-8") as f:
+            cache = json.load(f)
+
+        info.update({
+            "entries": len(cache),
+            "size_bytes": stat.st_size,
+            "last_modified": datetime.fromtimestamp(
+                stat.st_mtime
+            ).isoformat(),
+            "valid": True,
+        })
+
+    except Exception as e:
+        info.update({
+            "entries": None,
+            "size_bytes": stat.st_size,
+            "last_modified": datetime.fromtimestamp(
+                stat.st_mtime
+            ).isoformat(),
+            "valid": False,
+            "error": str(e),
+        })
+
+    return info
+    
 
 def get_data_from_file(input) -> str:
     input_path = Path(input).resolve()
@@ -45,7 +93,7 @@ def get_title_from_crossref(doi: str, mailto: str):
     return title
 
 
-def clean_crossref_to_html(title: str) -> str:
+def __clean_crossref_to_html(title: str) -> str:
     ELEMENT_RE = re.compile(r"^[A-Z][a-z]?$")
 
     soup = BeautifulSoup(title, "html.parser")
@@ -116,6 +164,99 @@ def clean_crossref_to_html(title: str) -> str:
     return html.strip()
 
 
+def clean_crossref_to_html(title: str) -> str:
+    # Después de sub/sup: pegar si es símbolo químico O puntuación conectora (guión, slash)
+    JOIN_AFTER_SUBSUP_RE = re.compile(r"^([A-Z][a-z]?(?=[^a-z]|$)|[\u2013\u2014\-/])")
+    # Después de </i>, </b>, etc.: pegar si empieza con puntuación conectora
+    JOIN_AFTER_CLOSE_RE = re.compile(r"^[\u2013\u2014\-/]")
+
+    INLINE_TAGS = {
+        "i": "i",
+        "em": "i",
+        "b": "b",
+        "strong": "b",
+        "u": "u",
+        "s": "s",
+        "strike": "s",
+        "small": "small",
+        "mark": "mark",
+    }
+
+    soup = BeautifulSoup(title, "html.parser")
+    tokens = []
+
+    def walk(node):
+        if isinstance(node, NavigableString):
+            text = re.sub(r"\s+", " ", str(node)).strip()
+            if text:
+                tokens.append(("text", text))
+            return
+        if not isinstance(node, Tag):
+            return
+
+        if node.name in ("sub", "sup"):
+
+            def inner_html(n):
+                if isinstance(n, NavigableString):
+                    return re.sub(r"\s+", "", str(n))
+                if not isinstance(n, Tag):
+                    return ""
+                if n.name in INLINE_TAGS:
+                    tag_out = INLINE_TAGS[n.name]
+                    return f"<{tag_out}>{''.join(inner_html(c) for c in n.children)}</{tag_out}>"
+                return "".join(inner_html(c) for c in n.children)
+
+            inner = "".join(inner_html(c) for c in node.children)
+            tokens.append((node.name, f"<{node.name}>{inner}</{node.name}>"))
+            return
+
+        if node.name in INLINE_TAGS:
+            tag_out = INLINE_TAGS[node.name]
+            tokens.append(("open", f"<{tag_out}>"))
+            for child in node.children:
+                walk(child)
+            tokens.append(("close", f"</{tag_out}>"))
+            return
+
+        for child in node.children:
+            walk(child)
+
+    for child in soup.children:
+        walk(child)
+
+    result = []
+    prev_kind = None
+
+    for kind, value in tokens:
+        if not result:
+            result.append(value)
+            prev_kind = kind
+            continue
+
+        join = False
+
+        if kind in {"sub", "sup"}:
+            join = True  # sub/sup pega con lo anterior
+        elif prev_kind in {"sub", "sup"} and JOIN_AFTER_SUBSUP_RE.match(value):
+            join = True  # después de sub/sup: símbolo o –/- /
+        elif prev_kind == "open":
+            join = True  # nunca espacio tras <i>, <b>…
+        elif kind == "close":
+            join = True  # nunca espacio antes de </i>, </b>…
+        elif prev_kind == "close" and JOIN_AFTER_CLOSE_RE.match(value):
+            join = True  # <i>n</i>-body → sin espacio
+
+        result.append("" if join else " ")
+        result.append(value)
+        prev_kind = kind
+
+    html = "".join(result)
+    html = re.sub(r"\s+", " ", html)
+    html = re.sub(r"\(\s+", "(", html)
+    html = re.sub(r"\s+\)", ")", html)
+    return html.strip()
+
+
 def fetch_papers_by_author(
     author_id: str,
     api_key="",
@@ -160,12 +301,8 @@ def fetch_papers_by_author(
         all_entries.extend(entries)
         total = int(data["search-results"]["opensearch:totalResults"])
         print(f" — Downloaded: {len(all_entries)}/{total}")
-        print(
-            f"{Style.DIM}   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')} {Style.RESET_ALL}"
-        )
-        print(
-            f"{Style.DIM}   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')} {Style.RESET_ALL}"
-        )
+        print(f"{Style.DIM}   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')} {Style.RESET_ALL}")
+        print(f"{Style.DIM}   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')} {Style.RESET_ALL}")
         time.sleep(0.2)
 
         next_limit = start + count
@@ -197,7 +334,7 @@ def fetch_citing_articles(
     count = 25
 
     while True:
-        print(f"  Fetching citing papers for {eid}", end="")
+        print(f"{Style.DIM}  [Info] Fetching citing papers for {eid}{Style.RESET_ALL}", end="")
         params = {
             "query": f"ref({eid})",
             "start": start,
@@ -234,7 +371,7 @@ def fetch_citing_articles(
         total = int(results.get("opensearch:totalResults", 0))
         start += count
 
-        print(f" — Downloaded: {len(all_entries)}/{total}")
+        print(f"{Style.DIM} — Downloaded: {len(all_entries)}/{total}{Style.RESET_ALL}")
         print(f"{Style.DIM}   X-RateLimit-Limit: {res.headers.get('X-RateLimit-Limit', '')} {Style.RESET_ALL}")
         print(f"{Style.DIM}   X-RateLimit-Remaining: {res.headers.get('X-RateLimit-Remaining', '')} {Style.RESET_ALL}")
         time.sleep(0.2)
@@ -284,11 +421,11 @@ def process_scopus_response(entries, get_better_title=False):
             doi = item["prism:doi"]
             title = item["dc:title"]
             if doi in cache:
-                # print(f"  [Info] Fetching better title from cache for {doi}")
+                print(f"{Style.DIM}  [Info] Fetching title from cache for {doi}{Style.RESET_ALL}")
                 item["xml:title"] = clean_crossref_to_html(cache[doi])
 
             else:
-                print(f"  [Info] Fetching better title from crossref for {doi}")
+                print(f"{Style.DIM}{Fore.YELLOW}  [Warning] Fetching title from Crossref for {doi}{Style.RESET_ALL}")
                 title = get_title_from_crossref(doi, "contact@watoc2028.org")
                 if title:
                     item["xml:title"] = clean_crossref_to_html(title)
