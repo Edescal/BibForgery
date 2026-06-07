@@ -162,7 +162,7 @@ def handle_list(args):
         else:
             count = 0
 
-        print(f"Nombre: {name:<15.15} Papers: {str(paper_count):<8.4} Papers con citas: {str(count):<4.4}")
+        print(f"Nombre: {name:<16.15}{f'({og_name})':<28.27}Papers: {str(paper_count):<8.4} Papers con citas: {str(count):<4.4}")
 
 
 def handle_recache(args):

@@ -43,6 +43,7 @@ def generate_full_json(input: str, include_citations=False):
             "id": eid,
             "authors": entry.get("author", []),
             "title": entry.get("dc:title"),
+            "xml-title": entry.get("xml:title"),
             "year": year,
             "month": month,
             "day": day,
