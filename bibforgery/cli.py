@@ -13,7 +13,7 @@ from .tools import (
 from .fix_elsevier_cache import fix_elsevier_doi_in_cache
 from .generators import generate_full_json, generate_docx, generate_pdf
 from .bibtex import dict_to_bibtex, generate_txt
-import argparse, os, json
+import argparse, os, json, shutil
 
 init()
 
@@ -162,7 +162,28 @@ def handle_list(args):
         else:
             count = 0
 
-        print(f"Nombre: {name:<16.15}{f'({og_name})':<28.27}Papers: {str(paper_count):<8.4} Papers con citas: {str(count):<4.4}")
+        print(
+            f"Nombre: {name:<16.15}{f'({og_name})':<28.27}Papers: {str(paper_count):<8.4} Papers con citas: {str(count):<4.4}"
+        )
+
+
+def handle_delete(args):
+    output_path = Path(f"output").resolve()
+    target_file = output_path / f"{args.name}_papers.json"
+    target_dir = output_path / args.name
+
+    if not target_file.is_file():
+        print(f"{Fore.RED}[Error] Registro no encontrado:{Style.RESET_ALL} {target_file.name}")
+        return
+
+    print(f"{Fore.YELLOW}[Info] Eliminando archivo:{Style.RESET_ALL} {target_file.name}")
+    target_file.unlink(missing_ok=True)
+
+    if target_dir.is_dir():
+        print(f"{Fore.YELLOW}[Info] Eliminando directorio asociado:{Style.RESET_ALL} " f"{target_dir.name}")
+        shutil.rmtree(target_dir, ignore_errors=True)
+
+    print(f"{Fore.GREEN}Registro eliminado correctamente:{Style.RESET_ALL} " f"{args.name}")
 
 
 def handle_recache(args):
@@ -263,6 +284,10 @@ def main():
 
     db_subp_list = db_subp.add_parser("list")
     db_subp_list.set_defaults(func=handle_list)
+
+    db_subp_list = db_subp.add_parser("delete")
+    db_subp_list.add_argument("name", type=str, help="Nombre del registro que se eliminará")
+    db_subp_list.set_defaults(func=handle_delete)
 
     db_subp_cache_info = db_subp.add_parser("cacheinfo")
     db_subp_cache_info.set_defaults(func=handle_cache_info)

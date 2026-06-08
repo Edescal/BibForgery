@@ -11,6 +11,7 @@ CACHE_DIR = Path(user_cache_dir("bibforgery"))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_FILE = CACHE_DIR / "crossref_cache.json"
 
+
 def load_cache():
     if CACHE_FILE.exists():
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
@@ -32,11 +33,13 @@ def get_cache_info() -> dict:
     }
 
     if not CACHE_FILE.exists():
-        info.update({
-            "entries": 0,
-            "size_bytes": 0,
-            "last_modified": None,
-        })
+        info.update(
+            {
+                "entries": 0,
+                "size_bytes": 0,
+                "last_modified": None,
+            }
+        )
         return info
 
     stat = CACHE_FILE.stat()
@@ -45,28 +48,28 @@ def get_cache_info() -> dict:
         with CACHE_FILE.open("r", encoding="utf-8") as f:
             cache = json.load(f)
 
-        info.update({
-            "entries": len(cache),
-            "size_bytes": stat.st_size,
-            "last_modified": datetime.fromtimestamp(
-                stat.st_mtime
-            ).isoformat(),
-            "valid": True,
-        })
+        info.update(
+            {
+                "entries": len(cache),
+                "size_bytes": stat.st_size,
+                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "valid": True,
+            }
+        )
 
     except Exception as e:
-        info.update({
-            "entries": None,
-            "size_bytes": stat.st_size,
-            "last_modified": datetime.fromtimestamp(
-                stat.st_mtime
-            ).isoformat(),
-            "valid": False,
-            "error": str(e),
-        })
+        info.update(
+            {
+                "entries": None,
+                "size_bytes": stat.st_size,
+                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "valid": False,
+                "error": str(e),
+            }
+        )
 
     return info
-    
+
 
 def get_data_from_file(input) -> str:
     input_path = Path(input).resolve()
@@ -93,82 +96,15 @@ def get_title_from_crossref(doi: str, mailto: str):
     return title
 
 
-def __clean_crossref_to_html(title: str) -> str:
-    ELEMENT_RE = re.compile(r"^[A-Z][a-z]?$")
-
-    soup = BeautifulSoup(title, "html.parser")
-
-    tokens = []
-
-    def walk(node):
-        if isinstance(node, NavigableString):
-            text = re.sub(r"\s+", " ", str(node)).strip()
-            if text:
-                tokens.append(("text", text))
-            return
-
-        if not isinstance(node, Tag):
-            return
-
-        if node.name == "sub":
-            text = re.sub(r"\s+", "", node.get_text())
-            tokens.append(("sub", f"<sub>{text}</sub>"))
-            return
-
-        if node.name == "sup":
-            text = re.sub(r"\s+", "", node.get_text())
-            tokens.append(("sup", f"<sup>{text}</sup>"))
-            return
-
-        for child in node.children:
-            walk(child)
-
-    for child in soup.children:
-        walk(child)
-
-    result = []
-
-    prev_kind = None
-
-    for kind, value in tokens:
-
-        if not result:
-            result.append(value)
-            prev_kind = kind
-            continue
-
-        join = False
-
-        # B + <sub>10</sub>
-        if kind in {"sub", "sup"}:
-            join = True
-
-        # </sub>H
-        elif prev_kind in {"sub", "sup"} and ELEMENT_RE.match(value):
-            join = True
-
-        if join:
-            result.append(value)
-        else:
-            result.append(" ")
-            result.append(value)
-
-        prev_kind = kind
-
-    html = "".join(result)
-
-    html = re.sub(r"\s+", " ", html)
-    html = re.sub(r"\(\s+", "(", html)
-    html = re.sub(r"\s+\)", ")", html)
-
-    return html.strip()
-
-
 def clean_crossref_to_html(title: str) -> str:
-    # Después de sub/sup: pegar si es símbolo químico O puntuación conectora (guión, slash)
+    # Después de sub/sup: pegar si es símbolo químico O puntuación conectora
     JOIN_AFTER_SUBSUP_RE = re.compile(r"^([A-Z][a-z]?(?=[^a-z]|$)|[\u2013\u2014\-/])")
-    # Después de </i>, </b>, etc.: pegar si empieza con puntuación conectora
+    # Después de </tag> normal: pegar si empieza con puntuación conectora
     JOIN_AFTER_CLOSE_RE = re.compile(r"^[\u2013\u2014\-/]")
+    # Después de close de wrapper sub/sup: pegar si empieza con letra o puntuación de fórmula
+    JOIN_AFTER_SUBSUP_WRAPPER_RE = re.compile(r"^[A-Za-z\u2013\u2014\-/:(]")
+    # Texto/token que debe pegarse al token anterior si ese era sub/sup o wrapper
+    PUNCT_AFTER_FORMULA_RE = re.compile(r"^[:\u2013\u2014\-/,;.!?]")
 
     INLINE_TAGS = {
         "i": "i",
@@ -184,6 +120,20 @@ def clean_crossref_to_html(title: str) -> str:
 
     soup = BeautifulSoup(title, "html.parser")
     tokens = []
+
+    def node_is_subsup_only(node: Tag) -> bool:
+        """True si todos los hijos significativos son sub/sup (es un wrapper de fórmula)."""
+        for child in node.children:
+            if isinstance(child, NavigableString):
+                if str(child).strip():
+                    return False
+            elif isinstance(child, Tag):
+                if child.name in ("sub", "sup"):
+                    continue
+                if child.name in INLINE_TAGS and node_is_subsup_only(child):
+                    continue
+                return False
+        return True
 
     def walk(node):
         if isinstance(node, NavigableString):
@@ -212,10 +162,13 @@ def clean_crossref_to_html(title: str) -> str:
 
         if node.name in INLINE_TAGS:
             tag_out = INLINE_TAGS[node.name]
-            tokens.append(("open", f"<{tag_out}>"))
+            is_wrapper = node_is_subsup_only(node)
+            open_kind = "open_subsup_wrapper" if is_wrapper else "open"
+            close_kind = "close_subsup_wrapper" if is_wrapper else "close"
+            tokens.append((open_kind, f"<{tag_out}>"))
             for child in node.children:
                 walk(child)
-            tokens.append(("close", f"</{tag_out}>"))
+            tokens.append((close_kind, f"</{tag_out}>"))
             return
 
         for child in node.children:
@@ -236,15 +189,47 @@ def clean_crossref_to_html(title: str) -> str:
         join = False
 
         if kind in {"sub", "sup"}:
-            join = True  # sub/sup pega con lo anterior
-        elif prev_kind in {"sub", "sup"} and JOIN_AFTER_SUBSUP_RE.match(value):
-            join = True  # después de sub/sup: símbolo o –/- /
+            # sub/sup siempre pega con lo anterior (H₂O: H pega con <sub>2</sub>)
+            join = True
+
+        elif kind == "open_subsup_wrapper":
+            # <b><sub>4</sub></b> wrapper pega con el texto/token anterior (K<b>...)
+            join = True
+
+        elif kind == "open":
+            # <i>, <b> normales: solo pegan si lo anterior ya estaba pegado (sub/sup/wrapper/open)
+            # En texto normal: "Effect of <b>" → espacio normal
+            join = prev_kind in {"sub", "sup", "open", "open_subsup_wrapper", "close_subsup_wrapper"}
+
+        elif prev_kind == "open_subsup_wrapper":
+            # justo después de abrir un wrapper → sin espacio (el sub viene dentro)
+            join = True
+
         elif prev_kind == "open":
-            join = True  # nunca espacio tras <i>, <b>…
-        elif kind == "close":
-            join = True  # nunca espacio antes de </i>, </b>…
-        elif prev_kind == "close" and JOIN_AFTER_CLOSE_RE.match(value):
-            join = True  # <i>n</i>-body → sin espacio
+            # justo después de <i> o <b> normal → sin espacio con el primer hijo
+            join = True
+
+        elif kind in {"close", "close_subsup_wrapper"}:
+            # nunca espacio antes del cierre de tag
+            join = True
+
+        elif prev_kind in {"sub", "sup"}:
+            if JOIN_AFTER_SUBSUP_RE.match(value):
+                # símbolo químico o guión/slash tras subíndice
+                join = True
+            elif PUNCT_AFTER_FORMULA_RE.match(value):
+                # ":" u otra puntuación tras superíndice (<sup>–</sup>: …)
+                join = True
+
+        elif prev_kind == "close":
+            if JOIN_AFTER_CLOSE_RE.match(value):
+                # <i>n</i>-body → sin espacio
+                join = True
+
+        elif prev_kind == "close_subsup_wrapper":
+            if JOIN_AFTER_SUBSUP_WRAPPER_RE.match(value):
+                # <b><sub>4</sub></b>I → sin espacio (continuación de fórmula)
+                join = True
 
         result.append("" if join else " ")
         result.append(value)
