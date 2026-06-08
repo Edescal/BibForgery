@@ -20,7 +20,7 @@ bibforgery = "bibforgery.cli:main"
 
 [project]
 name = "bibforgery"
-version = "1.10.21"
+version = "1.10.22"
 description = "Cliente para obtener y procesar datos de Scopus"
 authors = [
     { name="Eduardo Escalante" }
