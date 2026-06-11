@@ -106,8 +106,6 @@ def handle_export(args):
     citation_types = CitationType(0)
     for ct in args.citation_types:
         citation_types |= CitationType[ct]
-        
-    print(citation_types)
 
     if args.format == "word" or args.format == "docx":
         docx = generate_docx(
@@ -123,6 +121,7 @@ def handle_export(args):
             args.name,
             include_citations=args.full,
             citation_style=1 if args.style.lower() == "acs" else 2,
+            target_citation_types=citation_types,
         )
         dump_bytes_to_file(args.output, pdf_as_bytes, "pdf")
 

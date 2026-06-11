@@ -1,6 +1,6 @@
 from bs4 import BeautifulSoup, NavigableString, Tag
 from pathlib import Path
-import requests, time, re, json
+import requests, time, re, json, unicodedata
 from datetime import datetime
 from platformdirs import user_cache_dir
 from colorama import Style, init, Fore
@@ -244,41 +244,66 @@ def clean_crossref_to_html(title: str) -> str:
     return html.strip()
 
 
+def normalize(text):
+    text = text or ""
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return text.strip().lower()
+
+
 class CitationType(IntFlag):
     Autocitation = auto()
     A = auto()
     B = auto()
 
 
-def get_citation_type(author_id: str, authors_set: set[str], cita: dict[str, Any]) -> CitationType:
+def get_citation_type(target_author, authors_list: list, cita: dict[str, Any]) -> CitationType:
     citing_authors = cita.get("author", [])
-    current_set = set([a["authid"] for a in citing_authors])
 
-    if author_id in current_set:
-        return CitationType.Autocitation
+    coauthors = []
+    for a in citing_authors:
+        if author_matches(a, target_author):
+            return CitationType.Autocitation
 
-    comparison = current_set & authors_set
-    if len(comparison) > 0:
+        for b in authors_list:
+            if author_matches(a, b):
+                coauthors.append(b)
+
+    if len(coauthors) > 0:
         return CitationType.B
 
     return CitationType.A
+
+
+def author_matches(a, b):
+    if a["authid"] == b["authid"]:
+        return True
+
+    return (
+        normalize(a["surname"]) == normalize(b["surname"])
+        and normalize(a["given-name"]) == normalize(b["given-name"])
+        # and normalize(a["initials"]) == normalize(b["initials"])
+    )
 
 
 def filter_citations(author_id, authors_list: list, citation_target: CitationType, papers: list):
     if not author_id:
         return papers
 
-    og_authors = [a["authid"] for a in authors_list]
-    og_authors_set = set(og_authors)
-    og_authors_set.discard(author_id)
+    authors_rest = []
+    target_author = None
+    for a in authors_list:
+        if a["authid"] == author_id:
+            target_author = a
+        else:
+            authors_rest.append(a)
 
     results = []
     for cita in papers:
-        citation_type = get_citation_type(author_id, og_authors_set, cita)
+        citation_type = get_citation_type(target_author, authors_rest, cita)
 
         if citation_type & citation_target:
             results.append(cita)
-            print(cita['dc:title'])
 
     return results
 

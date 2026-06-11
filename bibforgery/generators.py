@@ -1,4 +1,4 @@
-from .tools import get_data_from_file, get_citation_type, CitationType, filter_citations
+from .tools import get_data_from_file,  CitationType, filter_citations
 from .libjabbrev2 import jabbreviation2
 from pathlib import Path
 from enum import Enum
@@ -166,7 +166,7 @@ def set_paragraph_spacing(para, before=0, after=4, line=None):
         pf.line_spacing = line
 
 
-def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_width_cm=0.8):
+def add_hanging_paragraph(doc, number_text, body_runs, indent_cm=0.0, number_width_cm=0.9):
     """
     Párrafo con numeración manual y sangría francesa (hanging indent).
     number_text : str  — p.ej. "[47]"
@@ -491,9 +491,9 @@ def generate_pdf(
             continue
 
         grouped[year].append(f"""
-            <div style="margin-left:30px;
-                        margin-top:4px;
-                        margin-bottom:4px;
+            <div style="margin-left:10px;
+                        margin-top:0px;
+                        margin-bottom:0px;
                         font-weight:bold;">
                 Cited by ({len(filtered_cites)}):
             </div>
