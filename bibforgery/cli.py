@@ -9,6 +9,7 @@ from .tools import (
     load_cache,
     get_cache_info,
     clean_crossref_to_html,
+    CitationType,
 )
 from .fix_elsevier_cache import fix_elsevier_doi_in_cache
 from .generators import generate_full_json, generate_docx, generate_pdf
@@ -102,11 +103,18 @@ def handle_fetch(args):
 
 
 def handle_export(args):
+    citation_types = CitationType(0)
+    for ct in args.citation_types:
+        citation_types |= CitationType[ct]
+        
+    print(citation_types)
+
     if args.format == "word" or args.format == "docx":
         docx = generate_docx(
             args.name,
             include_citations=args.full,
             citation_style=1 if args.style.lower() == "acs" else 2,
+            target_citation_types=citation_types,
         )
         dump_bytes_to_file(args.output, docx, "docx")
 
@@ -277,6 +285,13 @@ def main():
     export.add_argument("-o", "--output", required=True, help="Nombre del archivo de salida")
     export.add_argument("--style", choices=["aps", "acs"], default="acs")
     export.add_argument("--full", action="store_true", help="Incluye papers que han citado los papers")
+    export.add_argument(
+        "--citation-types",
+        nargs="+",
+        choices=["A", "B", "Autocitation"],
+        default=["A", "B"],
+        help="Tipos de citas a incluir.",
+    )
     export.set_defaults(func=handle_export)
 
     db = subparsers.add_parser("db")

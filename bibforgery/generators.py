@@ -1,4 +1,4 @@
-from .tools import get_data_from_file
+from .tools import get_data_from_file, get_citation_type, CitationType, filter_citations
 from .libjabbrev2 import jabbreviation2
 from pathlib import Path
 from enum import Enum
@@ -16,6 +16,7 @@ from collections import defaultdict
 from colorama import Style, Fore, init
 
 init()
+
 
 class CitationStyle(Enum):
     ACS = 1
@@ -298,15 +299,22 @@ def add_citation_formatted(
         add_hyperlink(para, doi, f"https://doi.org/{doi}")
 
 
-def generate_docx(name, include_citations=False, citation_style=CitationStyle.ACS) -> None:
+def generate_docx(
+    name,
+    include_citations=False,
+    citation_style=CitationStyle.ACS,
+    target_citation_types: CitationType = (CitationType.A | CitationType.B | CitationType.Autocitation),
+) -> bytes:
+
     filepath = Path(f"output/{name}_papers.json").resolve()
     if not filepath.is_file():
         print(f"{Style.DIM}{Fore.YELLOW}  [Warn] {filepath} not found{Style.RESET_ALL}")
         return None
-        
+
     raw_data = get_data_from_file(filepath)
     data = json.loads(raw_data)
 
+    author_id = data.get("authorid", None)
     entries = data.get("papers", [])
 
     def get_year(e):
@@ -320,10 +328,10 @@ def generate_docx(name, include_citations=False, citation_style=CitationStyle.AC
     total = len(sorted_entries)
 
     doc = Document()
-    
+
     section = doc.sections[0]
     p = section.header.paragraphs[0]
-    p.text = 'TheoChemMerida, 2026.'
+    p.text = "TheoChemMerida, 2026."
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
     # estilos base
@@ -375,16 +383,28 @@ def generate_docx(name, include_citations=False, citation_style=CitationStyle.AC
 
             cites = cites_data.get("papers", [])
 
+            # filtrar SOLO aquellas incluidas en el tipo de citas:
+            authors_list = entry.get("author", [])
+            og_authors = [a["authid"] for a in authors_list]
+            og_authors_set = set(og_authors)
+            og_authors_set.discard(author_id)
+            filtered_cites = filter_citations(author_id, authors_list, target_citation_types, cites)
+
+            # si no hay ninguna cita se skipea esta iteración
+            if len(filtered_cites) == 0:
+                continue
+
+            # añadir el label de Cited by (#):
             label_para = doc.add_paragraph()
             label_para.paragraph_format.left_indent = Cm(0.8)
             label_para.paragraph_format.space_before = Pt(3)
             label_para.paragraph_format.space_after = Pt(2)
-            r = label_para.add_run(f"Cited by ({len(cites)}):")
+            r = label_para.add_run(f"Cited by ({len(filtered_cites)}):")
             r.font.bold = True
             r.font.size = Pt(11)
             r.font.name = "Arial"
 
-            for j, cite_entry in enumerate(cites, start=1):
+            for j, cite_entry in enumerate(filtered_cites, start=1):
                 add_citation_formatted(
                     doc, cite_entry, j, abbreviated=True, extra_indent=True, citation_style=citation_style
                 )
@@ -400,17 +420,23 @@ def generate_docx(name, include_citations=False, citation_style=CitationStyle.AC
     return buffer.getvalue()
 
 
-def generate_pdf(name, include_citations=False, citation_style=CitationStyle.ACS) -> bytes | None:
+def generate_pdf(
+    name,
+    include_citations=False,
+    citation_style=CitationStyle.ACS,
+    target_citation_types: CitationType = (CitationType.A | CitationType.B | CitationType.Autocitation),
+) -> bytes | None:
     from weasyprint import HTML, CSS
 
     filepath = Path(f"output/{name}_papers.json").resolve()
     if not filepath.is_file():
         print(f"{Style.DIM}{Fore.YELLOW}  [Warn] {filepath} not found{Style.RESET_ALL}")
         return None
-    
+
     raw_data = get_data_from_file(filepath)
     data = json.loads(raw_data)
 
+    author_id = data.get("authorid", None)
     entries = data.get("papers", [])
 
     def get_year(e):
@@ -427,14 +453,15 @@ def generate_pdf(name, include_citations=False, citation_style=CitationStyle.ACS
     grouped = defaultdict(list)
     for i, entry in enumerate(sorted_entries):
         global_index = total - i
-
-        year = (entry.get("prism:coverDate", "") or "")[:4] or "Sin Año"
-
-        citation_html = process_single_entry_as_html(entry, global_index, citation_style)
-        grouped[year].append(citation_html)
-
         cited_count = int(entry.get("citedby-count", 0))
         eid = entry.get("eid", "")
+        short_title = entry.get("dc:title", "")[:45]
+        print(f"{Style.DIM} [{global_index:>3}/{total}] {short_title:<47.47} Cited by {cited_count}{Style.RESET_ALL}")
+
+        citation_html = process_single_entry_as_html(entry, global_index, citation_style)
+
+        year = (entry.get("prism:coverDate", "") or "")[:4] or "Sin Año"
+        grouped[year].append(citation_html)
 
         if not include_citations or cited_count <= 0 or not eid:
             continue
@@ -452,16 +479,27 @@ def generate_pdf(name, include_citations=False, citation_style=CitationStyle.ACS
 
         cites = cites_data.get("papers", [])
 
+        # filtrar SOLO aquellas incluidas en el tipo de citas:
+        authors_list = entry.get("author", [])
+        og_authors = [a["authid"] for a in authors_list]
+        og_authors_set = set(og_authors)
+        og_authors_set.discard(author_id)
+        filtered_cites = filter_citations(author_id, authors_list, target_citation_types, cites)
+
+        # si no hay ninguna cita se skipea esta iteración
+        if len(filtered_cites) == 0:
+            continue
+
         grouped[year].append(f"""
             <div style="margin-left:30px;
                         margin-top:4px;
                         margin-bottom:4px;
                         font-weight:bold;">
-                Cited by ({len(cites)}):
+                Cited by ({len(filtered_cites)}):
             </div>
             """)
 
-        for j, cite_entry in enumerate(cites, start=1):
+        for j, cite_entry in enumerate(filtered_cites, start=1):
             grouped[year].append(process_single_entry_as_html(cite_entry, j, citation_style, extra_indent=True))
 
     sorted_years = sorted(grouped.keys(), reverse=True)

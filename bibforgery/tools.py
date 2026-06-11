@@ -4,6 +4,8 @@ import requests, time, re, json
 from datetime import datetime
 from platformdirs import user_cache_dir
 from colorama import Style, init, Fore
+from enum import IntFlag, auto
+from typing import Any
 
 init()
 
@@ -242,6 +244,45 @@ def clean_crossref_to_html(title: str) -> str:
     return html.strip()
 
 
+class CitationType(IntFlag):
+    Autocitation = auto()
+    A = auto()
+    B = auto()
+
+
+def get_citation_type(author_id: str, authors_set: set[str], cita: dict[str, Any]) -> CitationType:
+    citing_authors = cita.get("author", [])
+    current_set = set([a["authid"] for a in citing_authors])
+
+    if author_id in current_set:
+        return CitationType.Autocitation
+
+    comparison = current_set & authors_set
+    if len(comparison) > 0:
+        return CitationType.B
+
+    return CitationType.A
+
+
+def filter_citations(author_id, authors_list: list, citation_target: CitationType, papers: list):
+    if not author_id:
+        return papers
+
+    og_authors = [a["authid"] for a in authors_list]
+    og_authors_set = set(og_authors)
+    og_authors_set.discard(author_id)
+
+    results = []
+    for cita in papers:
+        citation_type = get_citation_type(author_id, og_authors_set, cita)
+
+        if citation_type & citation_target:
+            results.append(cita)
+            print(cita['dc:title'])
+
+    return results
+
+
 def fetch_papers_by_author(
     author_id: str,
     api_key="",
@@ -299,6 +340,7 @@ def fetch_papers_by_author(
             break
 
     return {
+        "authorid": f"{author_id}",
         "papers": process_scopus_response(all_entries, get_better_title=crossref_title),
     }
 
@@ -392,6 +434,7 @@ def process_scopus_response(entries, get_better_title=False):
 
         item["author"] = [
             {
+                "authid": author.get("authid"),
                 "surname": author.get("surname"),
                 "given-name": author.get("given-name"),
                 "initials": author.get("initials"),
